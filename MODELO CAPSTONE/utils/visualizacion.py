@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 
+
 class Visualizador:
     def __init__(self):
         pass

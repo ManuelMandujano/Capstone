@@ -7,7 +7,7 @@ class EmbalseModelAdvanced:
     def __init__(self, params):
         self.params = params
         self.model = gp.Model("Embalse_Nueva_Punilla_Avanzado")
-        
+
     def calculate_factores_entrega(self, V_sep_deshielo):
         """Calcular factores de entrega según V_sep-deshielo (reglas oficiales)"""
         # Para Acciones Tipo A
@@ -17,7 +17,7 @@ class EmbalseModelAdvanced:
             FE_A = 0.75
         else:
             FE_A = 0.0005435 * V_sep_deshielo + 0.3478
-        
+
         # Para Acciones Tipo B
         if V_sep_deshielo >= 1100:  # Hm³
             FE_B = 1.0
@@ -25,12 +25,12 @@ class EmbalseModelAdvanced:
             FE_B = 0.5
         else:
             FE_B = 0.00505 * V_sep_deshielo - 4.555
-        
+
         return min(FE_A, 1.0), min(max(FE_B, 0.0), 1.0)  # Asegurar valores entre 0 y 1
-    
+
     def setup_variables(self, n_meses=12):
         """Configurar variables de decisión"""
-        print(f"🔧 Creando variables para {n_meses} meses...")
+        print(f" Creando variables para {n_meses} meses...")
         
         # Volúmenes almacenados
         self.V_R = self.model.addVars(n_meses, lb=0, ub=self.params['C_R'], name="V_R")
@@ -53,12 +53,12 @@ class EmbalseModelAdvanced:
         self.FE_A = self.model.addVar(lb=0, ub=1, name="FE_A")
         self.FE_B = self.model.addVar(lb=0, ub=1, name="FE_B")
         
-        print("✅ Variables creadas correctamente")
+        print("Variables creadas correctamente")
         
     def setup_constraints_advanced(self, Q_afluente, Q_PD, demandas_A, demandas_B):
         """Configurar restricciones con factores de entrega dinámicos"""
         n_meses = len(Q_afluente)
-        print("🔧 Configurando restricciones avanzadas...")
+        print(" Configurando restricciones avanzadas")
         
         # 1. Condiciones iniciales
         self.model.addConstr(self.V_R[0] == self.params['V_R_inicial'], "init_R")
@@ -67,18 +67,19 @@ class EmbalseModelAdvanced:
         
         # 2. Calcular V_sep-deshielo (volumen en septiembre + pronóstico deshielo)
         # Septiembre es el mes 4 en nuestro calendario (MAY=0, JUN=1, JUL=2, AGO=3, SEP=4)
-        V_sep = self.V_R[4] + self.V_A[4] + self.V_B[4]
-        V_sep_deshielo = V_sep + self.params['pronostico_deshielo_promedio']
-        
+        # V_sep = self.V_R[4] + self.V_A[4] + self.V_B[4]
+        # V_sep_deshielo = V_sep + self.params['pronostico_deshielo_promedio']
+
         # 3. Factores de entrega como variables (aproximación lineal)
         # Para FE_A
         self.model.addConstr(self.FE_A <= 1.0, "FE_A_max")
         self.model.addConstr(self.FE_A >= 0.75, "FE_A_min")
-        
+
         # Para FE_B  
         self.model.addConstr(self.FE_B <= 1.0, "FE_B_max")
         self.model.addConstr(self.FE_B >= 0.5, "FE_B_min")
-        
+        # self.model.addConstr(self.FE_B >= 0.00505 * (self.V_R[4] + self.V_A[4] + self.V_B[4] + self.params['pronostico_deshielo_promedio']) - 4.555, "FE_B_lineal")
+
         # 4. Balances hídricos mensuales
         for m in range(n_meses):
             if m > 0:
@@ -149,12 +150,12 @@ class EmbalseModelAdvanced:
     
     def set_objective(self):
         """FUNCIÓN OBJETIVO: min ∑(d_A[m] + d_B[m])"""
-        print("🎯 Configurando función objetivo: min ∑(d_A + d_B)")
+        print(" Configurando función objetivo: min ∑(d_A + d_B)")
         
         total_deficit = sum(self.d_A[m] + self.d_B[m] for m in range(len(self.d_A)))
         self.model.setObjective(total_deficit, GRB.MINIMIZE)
         
-        print("✅ Función objetivo configurada")
+        print(" Función objetivo configurada")
     
     def solve(self, Q_afluente, Q_PD, demandas_A, demandas_B):
         """Resolver el modelo avanzado"""
