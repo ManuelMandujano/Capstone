@@ -20,8 +20,8 @@ parametros_embalse:
   pronostico_deshielo_promedio: 200000000
   
   # Pérdidas mensuales (m³) - estimadas
-  perdidas_mensuales: [1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 
-                       1000000, 1000000, 1000000, 1000000, 1000000, 1000000]
+  perdidas_mensuales: [0, 0, 0, 0, 0, 0, 
+                       0, 0, 0, 0, 0, 0]
   
   # Temporada de riego (índices 0-11: MAY-ABR)
   temporada_riego: [5, 6, 7, 8, 9, 10, 11]  # OCT-ABR

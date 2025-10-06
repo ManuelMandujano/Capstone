@@ -53,7 +53,7 @@ def load_params():
         'C_R': 175_000_000, 'C_A': 260_000_000, 'C_B': 105_000_000,
         'V_R_inicial': 0, 'V_A_inicial': 0, 'V_B_inicial': 0,
         'consumo_humano_anual': 3_900_000,  # m3/año
-        'perdidas_mensuales': [1_000_000]*12,
+        'perdidas_mensuales': [0]*12,
         'lambda_R': 0.4, 'lambda_A': 0.4, 'lambda_B': 0.2,
         'eta': 0.85,
         'temporada_riego': [6,7,8,9,10,11,0],
