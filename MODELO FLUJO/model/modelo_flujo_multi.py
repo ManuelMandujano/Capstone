@@ -8,22 +8,19 @@ class EmbalseModelMulti:
     """
     Red de flujo tiempo-expandida para Y años concatenados (abril–marzo * Y).
 
-    Política exigida:
-      • Preferente: UPREF + SL_PREF = QPD (SL_PREF = incumplimiento penalizado).
-        Si Qin < QPD, SUP desde VRFI (solo stock previo).
-      • Llenado mensual del remanente: VRFI primero, luego A y B 0.71/0.29
-        con reasignación si falta espacio.
-      • EB solo si el remanente no cabe en VRFI + A + B.
-      • Objetivo: min sum(d_A + d_B) + w_pref * sum(SL_PREF).
+    Cambios clave:
+      • Preferente mensual: UPREF[k] = min(QPD_nominal_mes, Qin_k)  (todo en m³/s ← convertido a m³/mes).
+        => SUP (apoyo VRFI a preferente) no se usa: SUP[k] = 0.
+        => SL_PREF[k] = 0 (sin holgura de preferente).
+      • Llenado del remanente: VRFI primero, luego A/B en 0.71/0.29 con reasignación.
+      • EB sólo si el remanente no cabe en VRFI + A + B.
+      • Objetivo: min sum(d_A + d_B).
 
-    Pérdidas: L_R, L_A, L_B (m³/mes) con:
-      L_* ≤ lambda_* * perdidas_mensuales[mes]  y  L_* ≤ V_*_prev
-    => Sin stock previo, pérdidas efectivas 0.
+    Pérdidas: L_R, L_A, L_B (m³/mes):
+      L_* ≤ lambda_* * perdidas_mensuales[mes]  y  L_* ≤ V_*_prev.
 
-    Apoyos desde VRFI:
-      • Pauta 71/29 y disponibilidad usando VRFI_net = max(V_R_prev + IN_VRFI − SUP − R_H, 0).
-      • Si A(B) parte vacío: UVRFI_A(B) ≤ 0.5 * Dem_eff y piso activable:
-          UVRFI_* ≥ min(0.5*Dem_eff, cuota*VRFI_net).
+    NOTA: Este archivo mantiene genConstr MIN/MAX/INDICATOR que ya tenías;
+          sólo se cambia la definición de preferente (UPREF) y se fuerza SUP=0 y SL_PREF=0.
     """
 
     def __init__(self, params: Dict[str, Any]):
@@ -40,8 +37,6 @@ class EmbalseModelMulti:
         self.p.setdefault('lambda_A', 0.4)
         self.p.setdefault('lambda_B', 0.2)
         self.p.setdefault('force_FE_one', True)
-        # Penalización muy alta para incumplir preferente (m3 de SL_PREF en objetivo)
-        self.p.setdefault('w_pref_shortfall', 1e6)
 
     # -------------------------
     # Variables
@@ -55,7 +50,7 @@ class EmbalseModelMulti:
         self.V_B = m.addVars(N, lb=0, ub=p['C_B'], name="V_B")
         # flujos toma / llenado / rebalse
         self.UPREF   = m.addVars(N, lb=0, name="UPREF")
-        self.SUP     = m.addVars(N, lb=0, name="SUP")         # agua desde VRFI para completar preferente
+        self.SUP     = m.addVars(N, lb=0, name="SUP")         # forzado a 0 (no se usa para preferente)
         self.IN_VRFI = m.addVars(N, lb=0, name="IN_VRFI")
         self.INA     = m.addVars(N, lb=0, name="INA")
         self.INB     = m.addVars(N, lb=0, name="INB")
@@ -80,21 +75,22 @@ class EmbalseModelMulti:
         self.A_empty = m.addVars(N, vtype=GRB.BINARY, name="A_empty")
         self.B_empty = m.addVars(N, vtype=GRB.BINARY, name="B_empty")
 
-        # INCUMPLIMIENTO de preferente (suaviza la inviabilidad cuando QPD es imposible)
+        # (queda, pero lo forzaremos a 0)
         self.SL_PREF = m.addVars(N, lb=0, name="SL_PREF")
 
     # -------------------------
     # Restricciones
     # -------------------------
     def setup_constraints(self,
-                          Q_afluente_all: List[float],
-                          Q_PD_12: List[float],
-                          dem_A_12: List[float],
-                          dem_B_12: List[float],
+                          Q_afluente_all: List[float],      # m3/s por mes (horizonte completo)
+                          QPD_eff_all_m3s: List[float],      # m3/s por mes (ya min(QPD_nom, Qin))
+                          dem_A_12: List[float],             # m3/mes por mes (12)
+                          dem_B_12: List[float],             # m3/mes por mes (12)
                           n_years: int) -> None:
         m, p = self.m, self.p
         N = len(Q_afluente_all)
         assert N == 12 * n_years, "El largo de Q_afluente_all debe ser 12*n_years"
+        assert len(QPD_eff_all_m3s) == N, "QPD_eff_all_m3s debe tener largo N (=12*n_years)"
 
         # lambdas de pérdidas
         m.addConstr(p['lambda_R'] + p['lambda_A'] + p['lambda_B'] == 1, "lambda_sum")
@@ -104,8 +100,8 @@ class EmbalseModelMulti:
         for k in range(N):
             mes = k % 12
             seg = p['segundos_mes'][mes]
-            Qin = Q_afluente_all[k] * seg          # m³ disponibles en el mes
-            Qpd = Q_PD_12[mes] * seg               # m³ exigidos como preferente
+            Qin = Q_afluente_all[k] * seg          # m³/mes disponibles
+            Qpd_eff = QPD_eff_all_m3s[k] * seg     # m³/mes de preferente efectivo (min(QPD_nom, Qin_m3s))
             demA = dem_A_12[mes]
             demB = dem_B_12[mes]
 
@@ -114,30 +110,16 @@ class EmbalseModelMulti:
             V_A_prev = self.V_A[k-1] if k > 0 else p['V_A_inicial']
             V_B_prev = self.V_B[k-1] if k > 0 else p['V_B_inicial']
 
-            # === PREFERENTE: suavizado con incumplimiento penalizado ===
-            # UPREF + SL_PREF = Qpd
-            m.addConstr(self.UPREF[k] + self.SL_PREF[k] == Qpd, f"pref_balance_{k}")
-
-            # Física: lo que efectivamente entregas por preferente debe estar en Qin + SUP
-            m.addConstr(self.UPREF[k] <= Qin + self.SUP[k], f"pref_phys_{k}")
-
-            # SUP exacta si hace falta: SUP ≥ max(0, Qpd - Qin) − SL_PREF
-            # (Si incumples preferente, SUP exigida baja en esa misma magnitud)
-            need_sup = m.addVar(lb=0, name=f"need_sup[{k}]")
-            # need_sup = max(0, Qpd - Qin)
-            tmp_ns = m.addVar(lb=-GRB.INFINITY, name=f"tmp_ns[{k}]")
-            m.addConstr(tmp_ns == Qpd - Qin, name=f"tmp_ns_def_{k}")
-            m.addGenConstrMax(need_sup, [tmp_ns, 0.0], name=f"need_sup_max_{k}")
-            # Cota superior original: SUP ≤ need_sup
-            m.addConstr(self.SUP[k] <= need_sup, f"sup_upper_{k}")
-            # Cota inferior implícita por pref_phys y pref_balance
-
-            # IMPORTANTÍSIMO: SUP SOLO DESDE STOCK PREVIO (no “llenar y usar” el mismo mes)
-            m.addConstr(self.SUP[k] <= V_R_prev, f"sup_from_prev_{k}")
+            # === PREFERENTE: UPREF = min(QPD_nom, Qin) y no hay SUP ni SL_PREF ===
+            m.addConstr(self.UPREF[k] == Qpd_eff, f"pref_eq_{k}")
+            m.addConstr(self.SUP[k] == 0,        f"sup_zero_{k}")
+            m.addConstr(self.SL_PREF[k] == 0,    f"slpref_zero_{k}")
+            # (opcional, refuerzo): UPREF ≤ Qin
+            m.addConstr(self.UPREF[k] <= Qin,    f"pref_leq_Qin_{k}")
 
             # === REMANENTE DEL RÍO DESPUÉS DE ENTREGAR UPREF ===
             rem = m.addVar(lb=0, name=f"rem[{k}]")
-            m.addConstr(rem == Qin - (self.UPREF[k] - self.SUP[k]), f"rem_def_{k}")
+            m.addConstr(rem == Qin - self.UPREF[k], f"rem_def_{k}")  # (SUP=0)
 
             # Capacidades disponibles al inicio del mes (headrooms)
             capR = m.addVar(lb=0, name=f"capR[{k}]"); m.addConstr(capR == p['C_R'] - V_R_prev, f"capR_def_{k}")
@@ -218,7 +200,7 @@ class EmbalseModelMulti:
             m.addConstr(self.R_A[k] + self.UVRFI_A[k] <= DemA_eff, f"no_overserve_A_{k}")
             m.addConstr(self.R_B[k] + self.UVRFI_B[k] <= DemB_eff, f"no_overserve_B_{k}")
 
-            # --- Detectores “parte vacío” y topes 50% ---
+            # --- Detectores “parte vacío” y topes 50% (indicadores como tenías) ---
             if k == 0:
                 m.addConstr(self.A_empty[k] == (1 if p['V_A_inicial'] <= EPS0 else 0), name=f"Aempty_fix_{k}")
                 m.addConstr(self.B_empty[k] == (1 if p['V_B_inicial'] <= EPS0 else 0), name=f"Bempty_fix_{k}")
@@ -233,10 +215,9 @@ class EmbalseModelMulti:
             m.addGenConstrIndicator(self.B_empty[k], 1, self.UVRFI_B[k], GRB.LESS_EQUAL, 0.5 * DemB_eff,
                                     name=f"uvrfiB_half_dem_if_empty_{k}")
 
-            # --- VRFI NETO DISPONIBLE (tras SUP y R_H) ---
+            # --- VRFI NETO DISPONIBLE (tras SUP=0 y R_H) ---
             tmp_vrfi = m.addVar(lb=-GRB.INFINITY, name=f"tmp_vrfi[{k}]")
-            m.addConstr(tmp_vrfi == V_R_prev + self.IN_VRFI[k] - self.SUP[k] - self.R_H[k],
-                        f"tmp_vrfi_def_{k}")
+            m.addConstr(tmp_vrfi == V_R_prev + self.IN_VRFI[k] - self.R_H[k], f"tmp_vrfi_def_{k}")
             VRFI_net = m.addVar(lb=0, name=f"VRFI_net[{k}]")
             m.addGenConstrMax(VRFI_net, [tmp_vrfi, 0.0], name=f"VRFI_net_max_{k}")
 
@@ -255,9 +236,9 @@ class EmbalseModelMulti:
             m.addConstr(self.UVRFI_A[k] <= 0.71 * VRFI_net, f"uvrfiA_cota_{k}")
             m.addConstr(self.UVRFI_B[k] <= 0.29 * VRFI_net, f"uvrfiB_cota_{k}")
 
-            # Disponibilidad total (sin sobregiro bruto)
+            # Disponibilidad total (sin sobregiro bruto) — SUP=0
             m.addConstr(
-                self.UVRFI_A[k] + self.UVRFI_B[k] + self.SUP[k] + self.R_H[k]
+                self.UVRFI_A[k] + self.UVRFI_B[k] + self.R_H[k]
                 <= V_R_prev + self.IN_VRFI[k],
                 f"vrfi_avail_{k}"
             )
@@ -269,13 +250,13 @@ class EmbalseModelMulti:
             # balances de stocks
             m.addConstr(
                 self.V_R[k] == V_R_prev + self.IN_VRFI[k] - self.R_H[k] - self.UVRFI_A[k] - self.UVRFI_B[k]
-                               - self.L_R[k] - self.SUP[k],
+                               - self.L_R[k],
                 f"bal_R_{k}"
             )
             m.addConstr(self.V_A[k] == V_A_prev + self.INA[k] - self.R_A[k] - self.L_A[k], f"bal_A_{k}")
             m.addConstr(self.V_B[k] == V_B_prev + self.INB[k] - self.R_B[k] - self.L_B[k], f"bal_B_{k}")
 
-            # turbinado
+            # turbinado (el apoyo VRFI va por canales, no turbinado)
             m.addConstr(self.Q_turb[k] * seg == self.UPREF[k] + self.R_H[k] + self.R_A[k] + self.R_B[k],
                         f"qturb_{k}")
 
@@ -289,43 +270,26 @@ class EmbalseModelMulti:
     # Objetivo
     # -------------------------
     def set_objective(self, N: int) -> None:
-        w_pref = float(self.p.get('w_pref_shortfall', 1e6))
-        self.m.setObjective(
-            gp.quicksum(self.d_A[k] + self.d_B[k] for k in range(N)) +
-            w_pref * gp.quicksum(self.SL_PREF[k] for k in range(N)),
-            GRB.MINIMIZE
-        )
+        self.m.setObjective(gp.quicksum(self.d_A[k] + self.d_B[k] for k in range(N)), GRB.MINIMIZE)
 
     # -------------------------
     # Solve
     # -------------------------
     def solve(self,
-              Q_afluente_all: List[float],
-              Q_PD_12: List[float],
-              dem_A_12: List[float],
-              dem_B_12: List[float],
+              Q_afluente_all: List[float],      # m3/s por mes (horizonte)
+              QPD_eff_all_m3s: List[float],     # m3/s por mes (min(QPD_nom, Qin))
+              dem_A_12: List[float],            # m3/mes (12)
+              dem_B_12: List[float],            # m3/mes (12)
               n_years: int):
         try:
             N = 12 * n_years
             self.setup_variables(N)
-            self.setup_constraints(Q_afluente_all, Q_PD_12, dem_A_12, dem_B_12, n_years)
+            self.setup_constraints(Q_afluente_all, QPD_eff_all_m3s, dem_A_12, dem_B_12, n_years)
             self.set_objective(N)
 
             if 'TimeLimit' in self.p:
                 self.m.setParam('TimeLimit', self.p['TimeLimit'])
             self.m.setParam('OutputFlag', 1)
-                        # === velocidad sobre optimalidad ===
-            self.m.setParam('MIPGap', float(self.p.get('MIPGap', 0.02)))  # 2% por defecto
-            self.m.setParam('TimeLimit', int(self.p.get('TimeLimit', 600)))  # 10 min
-            self.m.setParam('MIPFocus', 1)       # prioriza soluciones factibles pronto
-            self.m.setParam('Heuristics', 0.5)   # más esfuerzo heurístico
-            self.m.setParam('Method', 2)         # barrier en la relajación raíz
-            self.m.setParam('Presolve', 2)       # presolve agresivo
-            # opcional: menos esfuerzo en cortes (si el bound es lento)
-            # self.m.setParam('Cuts', 1)         # 0=off, 1=conservador
-            # si ya reescalaste la función objetivo a Hm3, puedes bajar esto:
-            # self.m.setParam('NumericFocus', 1)
-
             self.m.optimize()
 
             if self.m.status == GRB.INFEASIBLE:
@@ -349,7 +313,6 @@ class EmbalseModelMulti:
                 'd_A':  [self.d_A[k].X for k in range(N)],
                 'd_B':  [self.d_B[k].X for k in range(N)],
                 'UPREF':[self.UPREF[k].X for k in range(N)],
-                'SL_PREF':[self.SL_PREF[k].X for k in range(N)],
                 'IN_VRFI':[self.IN_VRFI[k].X for k in range(N)],
                 'INA':  [self.INA[k].X for k in range(N)],
                 'INB':  [self.INB[k].X for k in range(N)],
@@ -358,11 +321,9 @@ class EmbalseModelMulti:
                 'UVRFI_A': [self.UVRFI_A[k].X for k in range(N)],
                 'UVRFI_B': [self.UVRFI_B[k].X for k in range(N)],
                 'Q_turb':[self.Q_turb[k].X for k in range(N)],
-                # pérdidas efectivas
                 'L_R':  [self.L_R[k].X for k in range(N)],
                 'L_A':  [self.L_A[k].X for k in range(N)],
                 'L_B':  [self.L_B[k].X for k in range(N)],
-                # binarios (diagnóstico)
                 'A_empty': [self.A_empty[k].X for k in range(N)],
                 'B_empty': [self.B_empty[k].X for k in range(N)],
                 'objetivo': self.m.objVal,

@@ -1,7 +1,6 @@
 # main_multi.py — Run CONECTADO (años enlazados) y guarda un informe TXT legible
 from pathlib import Path
 import sys
-import math
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent
@@ -15,10 +14,6 @@ try:
 except Exception:
     yaml = None
 
-
-# =========================
-# Helpers de formato
-# =========================
 MESES = ["abr","may","jun","jul","ago","sep","oct","nov","dic","ene","feb","mar"]
 
 def hm3(x):      # m3 -> Hm3
@@ -45,7 +40,6 @@ def header(title, char="="):
 def check_tol(val, tol=1e-6):
     return abs(val) <= tol
 
-# NUEVO: helper para mostrar “prev→fin” en %
 def pct_pair(prev, fin, cap):
     if cap <= 0:
         return "0→0%"
@@ -54,42 +48,20 @@ def pct_pair(prev, fin, cap):
     return f"{p:.0f}→{q:.0f}%"
 
 
-# =========================
-# Parámetros
-# =========================
 def load_params():
-    """
-    Parámetros por defecto (pueden sobre-escribirse con config/config.yaml).
-    • Preferente: UPREF = QPD; si Qin < QPD se cubre con SUP desde VRFI.
-    • Déficit: d_A = FE_A*DemA - (R_A + UVRFI_A), idem B.
-    """
     params = {
-        # Capacidades y estados iniciales (pon 0 si quieres partir vacío)
         'C_R': 175_000_000, 'C_A': 260_000_000, 'C_B': 105_000_000,
         'V_R_inicial': 0, 'V_A_inicial': 0, 'V_B_inicial': 0,
-
-        # Consumos/pérdidas
         'consumo_humano_anual': 3_900_000,  # m3/año
-        'perdidas_mensuales': [1_000_000]*12,  # m3/mes (se reparte por lambdas)
+        'perdidas_mensuales': [1_000_000]*12,
         'lambda_R': 0.4, 'lambda_A': 0.4, 'lambda_B': 0.2,
-
-        # Conversión y calendario
         'eta': 0.85,
-        'temporada_riego': [6,7,8,9,10,11,0],  # OCT–ABR (abril=0)
+        'temporada_riego': [6,7,8,9,10,11,0],
         'segundos_mes': [2678400,2592000,2678400,2592000,2678400,2592000,
                          2678400,2592000,2678400,2592000,2678400,2592000],
-
-        # Solver
-        'TimeLimit': 10000000000,
-
-        # Factores de entrega (sensibilidad)
+        'TimeLimit': 10_000_000,  # deja tu valor largo si quieres
         'FE_A': 1.0,
         'FE_B': 1.0,
-        # Si defines FE_A_12/FE_B_12 (12 valores), esos tienen prioridad:
-        # 'FE_A_12': [1]*12,
-        # 'FE_B_12': [1]*12,
-
-        # Penalizaciones suaves (si en tu modelo las usas)
         'penaliza_EB': 1e-6,
         'penaliza_SUP': 0.0,
     }
@@ -101,9 +73,6 @@ def load_params():
     return params
 
 
-# =========================
-# Cuerpo principal
-# =========================
 def main():
     out = []
     out.append(header("MODELO EMBALSE — RUN CONECTADO MULTI-AÑO"))
@@ -120,7 +89,7 @@ def main():
 
     out.append(f"✓ Escenarios cargados: {len(historicos)} años (serie abril→marzo)\n")
 
-    # Serie conectada y nombres
+    # Serie conectada (m3/s)
     Q_all = []
     nombres = []
     for s in historicos:
@@ -131,44 +100,34 @@ def main():
     N = 12 * Y
     out.append(f"→ Horizonte conectado: {Y} años = {N} meses\n\n")
 
-    # Demandas y Q_PD (m3/mes y m3/s respectivamente) — AHORA desde perfiles por acción
+    # Demandas (m3/mes)
     num_A = 21221
     num_B = 7100
-
-    # Perfiles verdaderos (m3/acción/mes) con claves 1..12 = ENE..DIC
-    demanda_A_mes = {
-        1: 0, 2: 0, 3: 0, 4: 500, 5: 2000, 6: 4000,
-        7: 6000, 8: 8000, 9: 6000, 10: 4000, 11: 2000, 12: 500
-    }
-    demanda_B_mes = {
-        1: 0, 2: 0, 3: 0, 4: 300, 5: 1500, 6: 3000,
-        7: 4500, 8: 6000, 9: 4500, 10: 3000, 11: 1500, 12: 300
-    }
-
-    # Orden de tu modelo: ABR→MAR. Mapeamos meses del perfil (ENE=1) a ese orden.
-    orden_abr_mar = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3]
-
-    # Convertimos de m3/acción/mes a m3/mes multiplicando por el nº de acciones
+    demanda_A_mes = {1:0,2:0,3:0,4:500,5:2000,6:4000,7:6000,8:8000,9:6000,10:4000,11:2000,12:500}
+    demanda_B_mes = {1:0,2:0,3:0,4:300,5:1500,6:3000,7:4500,8:6000,9:4500,10:3000,11:1500,12:300}
+    orden_abr_mar = [4,5,6,7,8,9,10,11,12,1,2,3]
     demandas_A = [demanda_A_mes[m] * num_A for m in orden_abr_mar]
     demandas_B = [demanda_B_mes[m] * num_B for m in orden_abr_mar]
-
-    # (Opcional pero MUY recomendable) Forzar temporada de riego = meses con demanda > 0
-    temporada_idx = [i for i, m in enumerate(orden_abr_mar)
-                    if (demanda_A_mes[m] > 0 or demanda_B_mes[m] > 0)]
+    temporada_idx = [i for i,m in enumerate(orden_abr_mar) if (demanda_A_mes[m] > 0 or demanda_B_mes[m] > 0)]
     params['temporada_riego'] = temporada_idx
 
-    # Q de ejercicio preferente (m3/s). Si ya lo cargas de Excel, deja esto como está o elimínalo.
-    Q_PD = [55.7] * 12
+    # QPD nominal (m3/s) por mes (si viene de config/Excel, úsalo; aquí fijo a 95.7)
+    QPD_nominal_12 = [95.7]*12
 
-    # (Opcional) Traza rápida al reporte para chequear magnitudes
+    # === NUEVO: QPD efectivo por mes del horizonte: min(QPD_nominal_mes, Qin_mes)
+    QPD_eff_all_m3s = []
+    for k in range(N):
+        mes = k % 12
+        QPD_eff_all_m3s.append(min(QPD_nominal_12[mes], Q_all[k]))
+
+    # Traza rápida
     out.append("Perfiles de demanda (m3/mes):\n")
     out.append(f"  ΣA = {hm3(sum(demandas_A)):.1f} Hm³/año  (por acción: {sum(demanda_A_mes.values()):,.0f} m³/acc/año)\n")
     out.append(f"  ΣB = {hm3(sum(demandas_B)):.1f} Hm³/año  (por acción: {sum(demanda_B_mes.values()):,.0f} m³/acc/año)\n\n")
 
-
-    # Resolver
+    # Resolver (pasa QPD efectivo por k)
     model = EmbalseModelMulti(params)
-    sol = model.solve(Q_all, Q_PD, demandas_A, demandas_B, n_years=Y)
+    sol = model.solve(Q_all, QPD_eff_all_m3s, demandas_A, demandas_B, n_years=Y)
     if not sol:
         print("❌ Multi-año sin solución")
         return
@@ -191,7 +150,7 @@ def main():
     out.append(f"Energía total (horizonte completo): {energia_total:,.0f} MWh\n\n")
 
     # ==========
-    # Chequeos globales (tolerancias)
+    # Chequeos globales
     # ==========
     out.append(header("CHEQUEOS GLOBALES (tolerancias 1e-6)", "-"))
     tol = 1e-6
@@ -200,33 +159,33 @@ def main():
     for k in range(N):
         m_idx = k % 12
         Qin_m3 = Q_all[k] * seg[m_idx]
-        QPD_m3 = Q_PD[m_idx] * seg[m_idx]
+        QPD_eff_m3 = QPD_eff_all_m3s[k] * seg[m_idx]
 
         up = sol['UPREF'][k]
-        su = sol['SUP'][k]
+        su = sol['SUP'][k]           # debería ser 0
         inr = sol['IN_VRFI'][k]
         ina = sol['INA'][k]
         inb = sol['INB'][k]
         eb = sol['EB'][k]
 
-        # preferente exacto
-        if not check_tol(up - QPD_m3, tol): viol_pref += 1
+        # preferente exacto = QPD efectivo
+        if not check_tol(up - QPD_eff_m3, tol): viol_pref += 1
 
-        # SUP no excede necesidad
-        need = max(0.0, QPD_m3 - Qin_m3)
-        if su - need > tol: viol_sup += 1
+        # SUP debe ser 0
+        if abs(su) > tol: viol_sup += 1
 
         # Conservación en la toma: Qin + SUP = UPREF + IN_R + INA + INB + EB
         cons = Qin_m3 + su - (up + inr + ina + inb + eb)
         if not check_tol(cons, tol): viol_cons += 1
 
-    out.append(f"Violaciones preferente (UPREF=QPD): {viol_pref}\n")
-    out.append(f"Violaciones SUP≤(QPD−Qin)^+:     {viol_sup}\n")
-    out.append(f"Violaciones conservación de masa: {viol_cons}\n\n")
+    out.append(f"Violaciones preferente (UPREF=QPD_eff): {viol_pref}\n")
+    out.append(f"SUP distinto de 0:                     {viol_sup}\n")
+    out.append(f"Violaciones conservación de masa:      {viol_cons}\n\n")
 
     # ==========
-    # REPORTE POR AÑO (dos tablas por año)
+    # REPORTE POR AÑO
     # ==========
+    out.append("NOTA: QPD en la tabla es el QPD EFECTIVO (min(QPD_nom, Qin)).\n\n")
     for y in range(Y):
         y0, y1 = 12*y, 12*(y+1)
         titulo = f"REPORTE ANUAL: {nombres[y]}  (mes a mes)"
@@ -234,7 +193,6 @@ def main():
 
         # ---- Tabla 1: Física
         out.append("Tabla 1 — Física del sistema (volúmenes en Hm³; caudales en m³/s y Qin/QPD en Hm³/mes)\n")
-        # Añadimos columnas Qin_m y QPD_m (Hm³/mes)
         line1 = row_line(
             ["Mes","Qin","Qin_m","QPD","QPD_m","SUP","IN_R","INA","INB","EB","Motivo_EB",
              "VRFI prev→fin","A prev→fin","B prev→fin","VRFI %p→f","A %p→f","B %p→f"],
@@ -247,13 +205,12 @@ def main():
         for k in range(y0, y1):
             m_idx = k % 12
             mm = MESES[m_idx]
-            Qin_m3s = Q_all[k]          # m³/s
-            QPD_m3s = Q_PD[m_idx]       # m³/s
+            Qin_m3s = Q_all[k]                 # m³/s
+            QPD_eff_m3s = QPD_eff_all_m3s[k]   # m³/s
             segm = seg[m_idx]
 
-            # Volúmenes mensuales (Hm³)
             Qin_Hm3 = hm3(Qin_m3s * segm)
-            QPD_Hm3 = hm3(QPD_m3s * segm)
+            QPD_Hm3 = hm3(QPD_eff_m3s * segm)
 
             SUP = sol['SUP'][k]
             IN_R = sol['IN_VRFI'][k]
@@ -261,7 +218,6 @@ def main():
             INB = sol['INB'][k]
             EB  = sol['EB'][k]
 
-            # stocks previos
             if k == 0:
                 VR_prev = params['V_R_inicial']
                 VA_prev = params['V_A_inicial']
@@ -285,7 +241,6 @@ def main():
             EB_cap = max(0.0, Rk - (min(cuotaA, HR_A) + min(cuotaB, HR_B)))
             motivo = "capacidad" if EB_cap > 1e-6 else ("opción" if EB > 1e-6 else "-")
 
-            # % llenado prev→fin
             vr_pct = pct_pair(VR_prev, VR_fin, params['C_R'])
             va_pct = pct_pair(VA_prev, VA_fin, params['C_A'])
             vb_pct = pct_pair(VB_prev, VB_fin, params['C_B'])
@@ -293,9 +248,9 @@ def main():
             out.append(row_line([
                 mm,
                 fsci(Qin_m3s),
-                f(Qin_Hm3,1),          # NUEVO: Qin_m (Hm³/mes)
-                fsci(QPD_m3s),
-                f(QPD_Hm3,1),          # NUEVO: QPD_m (Hm³/mes)
+                f(Qin_Hm3,1),
+                fsci(QPD_eff_m3s),       # QPD efectivo (m3/s)
+                f(QPD_Hm3,1),
                 f(hm3(SUP),1),
                 f(hm3(IN_R),1),
                 f(hm3(INA),1),
@@ -312,7 +267,6 @@ def main():
 
         # ---- Tabla 2: Servicio
         out.append("Tabla 2 — Servicio (Hm³/mes) + SSR (Hm³) + Energía (MWh)\n")
-        # Añadimos columnas de extracciones por volumen hacia la demanda
         line2 = row_line(
             ["Mes","DemA*FE","ServA","dA","DemB*FE","ServB","dB","R_H","Energía",
              "A_out","VRFI→A","B_out","VRFI→B","VRFI tot"],
@@ -330,7 +284,6 @@ def main():
             DemA_fe = feA * demandas_A[m_idx]
             DemB_fe = feB * demandas_B[m_idx]
 
-            # Componentes de servicio
             R_A = sol['R_A'][k]
             R_B = sol['R_B'][k]
             U_A = sol['UVRFI_A'][k]
@@ -354,7 +307,6 @@ def main():
                 f(hm3(dB),1),
                 f(hm3(RH),1),
                 f(energia_mwh,0),
-                # extracciones
                 f(hm3(R_A),1),
                 f(hm3(U_A),1),
                 f(hm3(R_B),1),
@@ -362,7 +314,6 @@ def main():
                 f(hm3(U_A + U_B),1)
             ], [4,9,8,6,9,8,6,7,9,7,8,7,8,9]) + "\n")
 
-        # ---- Resumen anual
         dA_y = sum(sol['d_A'][y0:y1]); dB_y = sum(sol['d_B'][y0:y1])
         EB_y = sum(sol['EB'][y0:y1]); RH_y = sum(sol['R_H'][y0:y1])
         VR_f = sol['V_R'][y1-1]; VA_f = sol['V_A'][y1-1]; VB_f = sol['V_B'][y1-1]
@@ -373,7 +324,6 @@ def main():
 
     out.append("✓ Reporte terminado.\n")
 
-    # Guardar archivo
     outdir = ROOT / 'data' / 'resultados'
     outdir.mkdir(parents=True, exist_ok=True)
     report_path = outdir / "reporte_conectado.txt"
