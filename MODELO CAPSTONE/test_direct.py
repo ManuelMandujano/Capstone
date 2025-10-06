@@ -1,13 +1,17 @@
 # test_direct.py
 import numpy as np
 from utils.data_loader import DataLoader
+from pathlib import Path
 
 def main():
     print("=== PRUEBA DIRECTA DEL MODELO ===")
     
     # 1. Cargar datos primero
     print("1. Cargando datos...")
-    data_loader = DataLoader('data/caudales.xlsx')
+    
+    BASE_DIR = Path(__file__).resolve().parent   
+    EXCEL_PATH = BASE_DIR / 'data' / 'caudales.xlsx'  
+    data_loader = DataLoader(str(EXCEL_PATH))
     scenarios = data_loader.get_historical_scenarios()
     
     if not scenarios:

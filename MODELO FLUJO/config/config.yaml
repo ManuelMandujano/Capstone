@@ -1,0 +1,35 @@
+# config/config.yaml
+parametros_embalse:
+  # Capacidades (m³)
+  C_R: 175000000  # Reserva fija
+  C_A: 260000000  # Acciones Tipo A  
+  C_B: 105000000  # Acciones Tipo B
+  
+  # Condiciones iniciales (m³)
+  V_R_inicial: 0
+  V_A_inicial: 0
+  V_B_inicial: 0
+  
+  # Consumo humano (m³ anual)
+  consumo_humano_anual: 3900000
+  
+  # Eficiencia turbina
+  eta: 0.85
+  
+  # Pronóstico deshielo promedio (m³)
+  pronostico_deshielo_promedio: 200000000
+  
+  # Pérdidas mensuales (m³) - estimadas
+  perdidas_mensuales: [1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 
+                       1000000, 1000000, 1000000, 1000000, 1000000, 1000000]
+  
+  # Temporada de riego (índices 0-11: MAY-ABR)
+  temporada_riego: [5, 6, 7, 8, 9, 10, 11]  # OCT-ABR
+  
+  # Segundos por mes (MAY-ABR)
+  segundos_mes: [2678400, 2592000, 2678400, 2592000, 2678400, 2592000, 
+                 2678400, 2592000, 2678400, 2592000, 2678400, 2592000]
+
+montecarlo:
+  n_simulaciones: 50  # Reducido para pruebas
+  nivel_confianza: 0.95
