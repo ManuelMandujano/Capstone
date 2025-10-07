@@ -115,10 +115,53 @@ def main():
     QPD_nominal_12 = [95.7]*12
 
     # === NUEVO: QPD efectivo por mes del horizonte: min(QPD_nominal_mes, Qin_mes)
+        # ===============================
+    # QPD nominal "base" por tablas (m3/s) en orden ABR→MAR
+    # ===============================
+    # Tabla Derechos No Consuntivos - Fila "Total" (MAY..ABR) ⇒ convertir a ABR..MAR
+    derechos_MAY_ABR = [52.00, 52.00, 52.00, 52.00, 57.70, 76.22, 69.22, 52.00, 52.00, 52.00, 52.00, 52.00]
+    derechos_ABR_MAR = [derechos_MAY_ABR[11]] + derechos_MAY_ABR[:11]  # [ABR, MAY..MAR]
+
+    # Caudal ecológico (MAY..ABR) ⇒ convertir a ABR..MAR
+    qeco_MAY_ABR = [10.00, 10.35, 14.48, 15.23, 15.23, 15.23, 15.23, 15.23, 12.80, 15.20, 16.40, 17.60]
+    qeco_ABR_MAR = [qeco_MAY_ABR[11]] + qeco_MAY_ABR[:11]  # [ABR, MAY..MAR]
+
+    # ===============================
+    # Armar series conectadas ABR→MAR para: Qin (Ñuble) y Hoya1+Hoya2+Hoya3
+    # ===============================
+    Q_all = []         # Ñuble (ya la tenías, la reconstruimos aquí para calcular también hoyas)
+    H_all = []         # suma Hoya1+Hoya2+Hoya3 (m3/s)
+    nombres = []
+
+    for s in historicos:
+        nombres.append(s['año'])
+        Q_all.extend(list(s['Q_nuble']))
+        # suma de hoyas del mismo año y en el mismo orden ABR→MAR
+        H_sum = (np.array(s['Q_hoya1'], dtype=float) +
+                 np.array(s['Q_hoya2'], dtype=float) +
+                 np.array(s['Q_hoya3'], dtype=float))
+        H_all.extend(list(H_sum))
+
+    Y = len(nombres)
+    N = 12 * Y
+    out.append(f"→ Horizonte conectado: {Y} años = {N} meses\n\n")
+
+    # ===============================
+    # QPD nominal AJUSTADO por mes (max de: derechos, Qeco, 95.7 - hoyas)
+    # y QPD efectivo = min(QPD_nom_ajust, Qin)
+    # ===============================
     QPD_eff_all_m3s = []
     for k in range(N):
-        mes = k % 12
-        QPD_eff_all_m3s.append(min(QPD_nominal_12[mes], Q_all[k]))
+        mes = k % 12  # 0=ABR,1=MAY,...,11=MAR
+
+        # 95.7 menos Hoyas de ese mes y año (no negativo)
+        base95_menos_hoyas = max(0.0, 95.7 - H_all[k])
+
+        # Máximo regulatorio/ambiental del mes (según tablas)
+        qpd_nom_ajust = max(derechos_ABR_MAR[mes], qeco_ABR_MAR[mes], base95_menos_hoyas)
+
+        # QPD efectivo: limitado por el afluente del mes
+        QPD_eff_all_m3s.append(min(qpd_nom_ajust, Q_all[k]))
 
     # Traza rápida
     out.append("Perfiles de demanda (m3/mes):\n")
