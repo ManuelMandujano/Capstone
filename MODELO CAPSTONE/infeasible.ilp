@@ -1,0 +1,152 @@
+\ Model Embalse_Nueva_Punilla_Multi_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+Minimize
+ 
+Subject To
+ pref_eq_0: UPREF[0] = 7.9173504e+07
+ rem_def_0: UPREF[0] + rem[0] = 7.9173504e+07
+ fillR_def_0: - rem[0] + zR[0] + fillR[0] = 0
+ invrfi_fillfirst_0: IN_VRFI[0] - fillR[0] = 0
+ bal_R_0: V_R[0] - IN_VRFI[0] + R_H[0] + UVRFI_A[0] + UVRFI_B[0] + L_R[0]
+   = 0
+ pref_eq_1: UPREF[1] = 9.053856e+07
+ rem_def_1: UPREF[1] + rem[1] = 9.053856e+07
+ fillR_def_1: - rem[1] + zR[1] + fillR[1] = 0
+ invrfi_fillfirst_1: IN_VRFI[1] - fillR[1] = 0
+ bal_R_1: - V_R[0] + V_R[1] - IN_VRFI[1] + R_H[1] + UVRFI_A[1] + UVRFI_B[1]
+   + L_R[1] = 0
+ pref_eq_2: UPREF[2] = 9.9154368000000015e+07
+ rem_def_2: UPREF[2] + rem[2] = 9.9154368000000015e+07
+ fillR_def_2: - rem[2] + zR[2] + fillR[2] = 0
+ invrfi_fillfirst_2: IN_VRFI[2] - fillR[2] = 0
+ bal_R_2: - V_R[1] + V_R[2] - IN_VRFI[2] + R_H[2] + UVRFI_A[2] + UVRFI_B[2]
+   + L_R[2] = 0
+ pref_eq_3: UPREF[3] = 7.584192e+07
+ rem_def_3: UPREF[3] + rem[3] = 7.584192e+07
+ fillR_def_3: - rem[3] + zR[3] + fillR[3] = 0
+ invrfi_fillfirst_3: IN_VRFI[3] - fillR[3] = 0
+ bal_R_3: - V_R[2] + V_R[3] - IN_VRFI[3] + R_H[3] + UVRFI_A[3] + UVRFI_B[3]
+   + L_R[3] = 0
+ pref_eq_4: UPREF[4] = 9.4842143999999985e+07
+ rem_def_4: UPREF[4] + rem[4] = 9.4842143999999985e+07
+ fillR_def_4: - rem[4] + zR[4] + fillR[4] = 0
+ invrfi_fillfirst_4: IN_VRFI[4] - fillR[4] = 0
+ bal_R_4: - V_R[3] + V_R[4] - IN_VRFI[4] + R_H[4] + UVRFI_A[4] + UVRFI_B[4]
+   + L_R[4] = 0
+ pref_eq_5: UPREF[5] = 1.045872e+08
+ rem_def_5: UPREF[5] + rem[5] = 1.045872e+08
+ fillR_def_5: - rem[5] + zR[5] + fillR[5] = 0
+ invrfi_fillfirst_5: IN_VRFI[5] - fillR[5] = 0
+ bal_R_5: - V_R[4] + V_R[5] - IN_VRFI[5] + R_H[5] + UVRFI_A[5] + UVRFI_B[5]
+   + L_R[5] = 0
+ pref_eq_6: UPREF[6] = 7.1084736e+07
+ rem_def_6: UPREF[6] + rem[6] = 7.1084736e+07
+ fillR_def_6: - rem[6] + zR[6] + fillR[6] = 0
+ invrfi_fillfirst_6: IN_VRFI[6] - fillR[6] = 0
+ bal_R_6: - V_R[5] + V_R[6] - IN_VRFI[6] + R_H[6] + UVRFI_A[6] + UVRFI_B[6]
+   + L_R[6] = 0
+ pref_eq_7: UPREF[7] = 6.97248e+07
+ rem_def_7: UPREF[7] + rem[7] = 6.97248e+07
+ fillR_def_7: - rem[7] + zR[7] + fillR[7] = 0
+ invrfi_fillfirst_7: IN_VRFI[7] - fillR[7] = 0
+ bal_R_7: - V_R[6] + V_R[7] - IN_VRFI[7] + R_H[7] + UVRFI_A[7] + UVRFI_B[7]
+   + L_R[7] = 0
+ pref_eq_8: UPREF[8] = 5.7987359999999993e+07
+ rem_def_8: UPREF[8] + rem[8] = 5.7987359999999993e+07
+ fillR_def_8: - rem[8] + zR[8] + fillR[8] = 0
+ invrfi_fillfirst_8: IN_VRFI[8] - fillR[8] = 0
+ bal_R_8: - V_R[7] + V_R[8] - IN_VRFI[8] + R_H[8] + UVRFI_A[8] + UVRFI_B[8]
+   + L_R[8] = 0
+ pref_eq_9: UPREF[9] = 4.828896e+07
+ rem_def_9: UPREF[9] + rem[9] = 4.828896e+07
+ fillR_def_9: - rem[9] + zR[9] + fillR[9] = 0
+ invrfi_fillfirst_9: IN_VRFI[9] - fillR[9] = 0
+ bal_R_9: - V_R[8] + V_R[9] - IN_VRFI[9] + R_H[9] + UVRFI_A[9] + UVRFI_B[9]
+   + L_R[9] = 0
+ pref_eq_10: UPREF[10] = 2.1534335999999996e+07
+ rem_def_10: UPREF[10] + rem[10] = 2.1534335999999996e+07
+ fillR_def_10: - rem[10] + zR[10] + fillR[10] = 0
+ invrfi_fillfirst_10: IN_VRFI[10] - fillR[10] = 0
+ bal_R_10: - V_R[9] + V_R[10] - IN_VRFI[10] + R_H[10] + UVRFI_A[10]
+   + UVRFI_B[10] + L_R[10] = 0
+ pref_eq_11: UPREF[11] = 2.115072e+07
+ rem_def_11: UPREF[11] + rem[11] = 2.115072e+07
+ fillR_def_11: - rem[11] + zR[11] + fillR[11] = 0
+ invrfi_fillfirst_11: IN_VRFI[11] - fillR[11] = 0
+ bal_R_11: - V_R[10] + V_R[11] - IN_VRFI[11] + R_H[11] + UVRFI_A[11]
+   + UVRFI_B[11] + L_R[11] = 0
+ humano_anual_y0: R_H[0] + R_H[1] + R_H[2] + R_H[3] + R_H[4] + R_H[5]
+   + R_H[6] + R_H[7] + R_H[8] + R_H[9] + R_H[10] + R_H[11] = 3.9e+06
+Bounds
+ V_R[0] free
+ V_R[1] free
+ V_R[2] free
+ V_R[3] free
+ V_R[4] free
+ V_R[5] free
+ V_R[6] free
+ V_R[7] free
+ V_R[8] free
+ V_R[9] free
+ V_R[10] free
+ UPREF[0] free
+ UPREF[1] free
+ UPREF[2] free
+ UPREF[3] free
+ UPREF[4] free
+ UPREF[5] free
+ UPREF[6] free
+ UPREF[7] free
+ UPREF[8] free
+ UPREF[9] free
+ UPREF[10] free
+ UPREF[11] free
+ IN_VRFI[0] free
+ IN_VRFI[1] free
+ IN_VRFI[2] free
+ IN_VRFI[3] free
+ IN_VRFI[4] free
+ IN_VRFI[5] free
+ IN_VRFI[6] free
+ IN_VRFI[7] free
+ IN_VRFI[8] free
+ IN_VRFI[9] free
+ IN_VRFI[10] free
+ IN_VRFI[11] free
+ R_H[0] free
+ R_H[1] free
+ R_H[2] free
+ R_H[3] free
+ R_H[4] free
+ R_H[5] free
+ R_H[6] free
+ R_H[7] free
+ R_H[8] free
+ R_H[9] free
+ R_H[10] free
+ R_H[11] free
+ rem[0] free
+ fillR[0] free
+ rem[1] free
+ fillR[1] free
+ rem[2] free
+ fillR[2] free
+ rem[3] free
+ fillR[3] free
+ rem[4] free
+ fillR[4] free
+ rem[5] free
+ fillR[5] free
+ rem[6] free
+ fillR[6] free
+ rem[7] free
+ fillR[7] free
+ rem[8] free
+ fillR[8] free
+ rem[9] free
+ fillR[9] free
+ rem[10] free
+ fillR[10] free
+ rem[11] free
+ fillR[11] free
+End
