@@ -54,7 +54,7 @@ class EmbalseModelMulti:
         self.IN_VRFI = m.addVars(N, lb=0, name="IN_VRFI")
         self.INA     = m.addVars(N, lb=0, name="INA")
         self.INB     = m.addVars(N, lb=0, name="INB")
-        self.EB      = m.addVars(N, lb=0, name="EB")
+        self.EB      = m.addVars(N, lb=0, name="EB") #QUE ES ESTO
         # entregas y apoyos
         self.R_A     = m.addVars(N, lb=0, name="R_A")
         self.R_B     = m.addVars(N, lb=0, name="R_B")
@@ -257,7 +257,7 @@ class EmbalseModelMulti:
             m.addConstr(self.V_B[k] == V_B_prev + self.INB[k] - self.R_B[k] - self.L_B[k], f"bal_B_{k}")
 
             # turbinado (el apoyo VRFI va por canales, no turbinado)
-            m.addConstr(self.Q_turb[k] * seg == self.UPREF[k] + self.R_H[k] + self.R_A[k] + self.R_B[k],
+            m.addConstr(self.Q_turb[k] * seg ==  self.R_H[k] + self.R_A[k] + self.R_B[k],
                         f"qturb_{k}")
 
         # SSR anual por año
