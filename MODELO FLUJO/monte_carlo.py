@@ -126,7 +126,7 @@ def ejecutar_modelo_con_escenario(escenario_anos):
     # PRINT DE DEBUG - FLUJOS DE AGUA
     meses_nombres = ['ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC', 'ENE', 'FEB', 'MAR']
     print(f"\n{'='*100}")
-    print(f"🔍 DEBUG COMPLETO - FLUJOS DE AGUA - AÑO: {escenario_anos[0]}")
+    print(f" DEBUG COMPLETO - FLUJOS DE AGUA - AÑO: {escenario_anos[0]}")
     print(f"{'='*100}")
     
     for k in range(12):
@@ -135,13 +135,13 @@ def ejecutar_modelo_con_escenario(escenario_anos):
         Qin_m3 = Q_all[k] * seg
         QPD_m3 = QPD_eff_all_m3s[k] * seg
         
-        print(f"\n📅 MES {meses_nombres[mes]} (índice {mes}):")
-        print(f"   🌊 ENTRADAS:")
+        print(f"\n MES {meses_nombres[mes]} (índice {mes}):")
+        print(f"    ENTRADAS:")
         print(f"      Qin (río): {Q_all[k]:6.2f} m³/s = {Qin_m3:12,.0f} m³/mes")
         print(f"      QPD efectivo: {QPD_eff_all_m3s[k]:6.2f} m³/s = {QPD_m3:12,.0f} m³/mes")
         print(f"      Hoyas (1+2+3): {H_all[k]:6.2f} m³/s")
         
-        print(f"   📊 DEMANDAS:")
+        print(f"   DEMANDAS:")
         print(f"      Demanda A: {demandas_A[mes]:12,.0f} m³/mes")
         print(f"      Demanda B: {demandas_B[mes]:12,.0f} m³/mes")
         print(f"      Consumo humano anual: {params['consumo_humano_anual']:12,.0f} m³/año")
@@ -158,8 +158,8 @@ def ejecutar_modelo_con_escenario(escenario_anos):
             mes = k % 12
             seg = params['segundos_mes'][mes]
             
-            print(f"\n📅 MES {meses_nombres[mes]}:")
-            print(f"   💧 FLUJOS (m³/mes):")
+            print(f"\n MES {meses_nombres[mes]}:")
+            print(f"    FLUJOS (m³/mes):")
             print(f"      UPREF (preferente): {sol['UPREF'][k]:12,.0f}")
             print(f"      IN_VRFI → Embalse R: {sol['IN_VRFI'][k]:12,.0f}")
             print(f"      INA → Embalse A: {sol['INA'][k]:12,.0f}")
@@ -168,23 +168,23 @@ def ejecutar_modelo_con_escenario(escenario_anos):
             print(f"      SUP (apoyo): {sol['SUP'][k]:12,.0f}")
             print(f"QIN (río): {Q_all[k]:6.2f} m³/s = {Q_all[k] * seg:12,.0f} m³/mes")
 
-            print(f"   🏭 ENTREGAS (m³/mes):")
+            print(f"    ENTREGAS (m³/mes):")
             print(f"      R_H (consumo humano): {sol['R_H'][k]:12,.0f}")
             print(f"      R_A (riego A): {sol['R_A'][k]:12,.0f}")
             print(f"      R_B (riego B): {sol['R_B'][k]:12,.0f}")
             print(f"      UVRFI_A (apoyo A): {sol['UVRFI_A'][k]:12,.0f}")
             print(f"      UVRFI_B (apoyo B): {sol['UVRFI_B'][k]:12,.0f}")
             
-            print(f"   📈 VOLÚMENES FINALES (m³):")
+            print(f"    VOLÚMENES FINALES (m³):")
             print(f"      V_R: {sol['V_R'][k]:12,.0f}")
             print(f"      V_A: {sol['V_A'][k]:12,.0f}")
             print(f"      V_B: {sol['V_B'][k]:12,.0f}")
             
-            print(f"   ❌ DÉFICITS (m³/mes):")
+            print(f"    DÉFICITS (m³/mes):")
             print(f"      d_A: {sol['d_A'][k]:12,.0f}")
             print(f"      d_B: {sol['d_B'][k]:12,.0f}")
             
-            print(f"   💨 PÉRDIDAS (m³/mes):")
+            print(f"    PÉRDIDAS (m³/mes):")
             print(f"      L_R: {sol['L_R'][k]:12,.0f}")
             print(f"      L_A: {sol['L_A'][k]:12,.0f}")
             print(f"      L_B: {sol['L_B'][k]:12,.0f}")
@@ -192,11 +192,12 @@ def ejecutar_modelo_con_escenario(escenario_anos):
             print(f"   ⚡ TURBINADO:")
             print(f"      Q_turb: {sol['Q_turb'][k]:6.2f} m³/s = {sol['Q_turb'][k] * seg:12,.0f} m³/mes")
             
-            print(f"   🔍 ESTADO EMBALSES:")
+            print(f"    ESTADO EMBALSES:")
             print(f"      A_empty: {sol['A_empty'][k]}")
             print(f"      B_empty: {sol['B_empty'][k]}")
             print(f"      Qin (río): {Q_all[k]:6.2f} m³/s = {Q_all[k] * seg:12,.0f} m³/mes")
-        print(f"\n📊 RESUMEN ANUAL:")
+        
+        print(f"\n RESUMEN ANUAL:")
         print(f"   Déficit total A: {sum(sol['d_A'][:12]):12,.0f} m³")
         print(f"   Déficit total B: {sum(sol['d_B'][:12]):12,.0f} m³")
         print(f"   Consumo humano total: {sum(sol['R_H'][:12]):12,.0f} m³")
