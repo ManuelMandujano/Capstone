@@ -71,7 +71,7 @@ class EmbalseNuevaPunilla:
         self.IN_B = m.addVars(self.anos, self.months, name="IN_B", lb=0)  # entrada a b
 
         # 5.4.3. DESCARGAS a pie de presa (en Hm³/mes)
-        self.Q_pref = m.addVars(self.anos, self.months, name="Q_pref", lb=0)  # Caudal preferente
+        #self.Q_pref = m.addVars(self.anos, self.months, name="Q_pref", lb=0)  # Caudal preferente
         self.Q_ch = m.addVars(self.anos, self.months, name="Q_ch", lb=0)  # Consumo humano
         self.Q_A = m.addVars(self.anos, self.months, name="Q_A", lb=0)  # Descarga A
         self.Q_B = m.addVars(self.anos, self.months, name="Q_B", lb=0)  # Descarga B
@@ -81,7 +81,11 @@ class EmbalseNuevaPunilla:
         self.E_A = m.addVars(self.anos, self.months, name="E_A", lb=0)  # Rebalse A a B
         self.E_B = m.addVars(self.anos, self.months, name="E_B", lb=0)  # Rebalse B a A
         self.E_TOT = m.addVars(self.anos, self.months, name="E_TOT", lb=0)
-        #falta 5.4.5 q no estaba definido en latex
+        
+        # 5.4.4 Caudal de apoyo de VRFI a entregas
+        self.Q_A_apoyo = m.addVars(self.anos, self.months, name="Q_A_apoyo", lb=0)  # Caudal de apoyo a A
+        self.Q_B_apoyo = m.addVars(self.anos, self.months, name="Q_B_apoyo", lb=0)  # Caudal de apoyo a B
+
         # 5.4.6. DÉFICITS (en Hm³/mes)
         self.d_A = m.addVars(self.anos, self.months, name="d_A", lb=0)  # Déficit A
         self.d_B = m.addVars(self.anos, self.months, name="d_B", lb=0)  # Déficit B
@@ -91,7 +95,7 @@ class EmbalseNuevaPunilla:
         
         self.Q_turb = m.addVars(self.anos, self.months, name="Q_turb", lb=0)
         
-    def load_flow_data(self, file_path):
+    def load_flow_data(self, file_path):# REVISAR
         """Cargar datos de caudales desde Excel"""
         xls = pd.ExcelFile(file_path)
         
@@ -179,8 +183,13 @@ class EmbalseNuevaPunilla:
                 qpd_nom_ajust = max(derechos_MAY_ABR[mes-1], qeco_MAY_ABR[mes-1], base95_menos_hoyas)
                 #asi quedo definido el QPD_effectivo, cualdal preferente efectivo
                 self.QPD_eff[año, mes] = min(qpd_nom_ajust, Q_nuble_m3s)
+        primer_año = self.anos[0]
+        m.addConstr(self.V_VRFI[primer_año, 1] == 0, "inicial_VRFI")#revisar estas restricciones iniciales
+        m.addConstr(self.V_A[primer_año, 1] == 0, "inicial_A")  
+        m.addConstr(self.V_B[primer_año, 1] == 0, "inicial_B")
+
+        # RESTRICCIONES 
         
-        # RESTRICCIONES (numeradas como en tu PDF)
         for año in self.anos:
             año_num = int(año.split('/')[0])
             for i, mes in enumerate(self.months):
@@ -191,9 +200,8 @@ class EmbalseNuevaPunilla:
                 
     
                 QPD_eff_m3s = self.QPD_eff[año, mes]
-                QPD_eff = QPD_eff_m3s * seg / 1_000_000  # QPD_eff en Hm³/mes
-                
-                demA = self.demandas_A[i] / 1_000_000  # D_A en Hm³/mes
+                QPD_eff_Hm3 = QPD_eff_m3s * seg / 1_000_000  # QPD_eff en Hm³/mes
+                demA = self.demandas_A[i] / 1_000_000  # D_A en Hm³/mes#revisar coherencia en xlsx si correspinde
                 demB = self.demandas_B[i] / 1_000_000  # D_B en Hm³/mes
                 
                 # Stocks previos (manejo de años)
@@ -214,44 +222,40 @@ class EmbalseNuevaPunilla:
                 
                 # RESTRICCIONES DE BALANCE DEL RÍO (PDF 1-3)
                
-                
+                ''''' ya no sirven pq qpref es parametro no. variable...
                 # (1) Balance del río: Q_pref + Q_dis = Q_afl
-                m.addConstr(
-                    self.Q_pref[año, mes] + self.Q_dis[año, mes] == Qin,
-                    f"balance_rio_{año}_{mes}"
-                )
+                m.addConstr( self.Q_pref[año, mes] + self.Q_dis[año, mes] == Qin,
+                    f"balance_rio_{año}_{mes}" )
                 
                 # (2) Q_pref ≤ Q_afl
                 m.addConstr(
                     self.Q_pref[año, mes] <= Qin,
-                    f"pref_leq_afl_{año}_{mes}"
-                )
+                    f"pref_leq_afl_{año}_{mes}")
                 
                 # (3) Q_pref ≤ QPD_eff  
-                m.addConstr(
-                    self.Q_pref[año, mes] <= QPD_eff,
-                    f"pref_leq_qpd_{año}_{mes}"
-                )
-                
-                # =============================================
-                # RESTRICCIONES DE BALANCE DE NODOS (PDF 4-21)
-                # =============================================
+                m.addConstr( self.Q_pref[año, mes] <= QPD_eff,
+                    f"pref_leq_qpd_{año}_{mes}")
+                '''
+
+                # RESTRICCIONES DE BALANCE DE NODOS 
                 
                 # (4) Balance nodo almacenable: Q_dis = E_TOT + Q_alm
                 m.addConstr(
                     self.Q_dis[año, mes] == self.E_TOT[año, mes] + self.Q_alm[año, mes],
-                    f"balance_almacenable_{año}_{mes}"
-                )
+                    f"balance_almacenable_{año}_{mes}")
                 
                 # (5) Balance nodo VRFI: Q_alm = IN_VRFI + E_VRFI
                 m.addConstr(
                     self.Q_alm[año, mes] == self.IN_VRFI[año, mes] + self.E_VRFI[año, mes],
-                    f"balance_vrfi_entrada_{año}_{mes}"
-                )
+                    f"balance_vrfi_entrada_{año}_{mes}")
                 
-                # (6) Balance stock VRFI
+                # (6) Balance stock 
                 m.addConstr(
-                    self.V_VRFI[año, mes] == V_VRFI_prev + self.IN_VRFI[año, mes] - self.Q_ch[año, mes],
+                    self.V_VRFI[año, mes] == V_VRFI_prev + 
+                    self.IN_VRFI[año, mes] - 
+                    self.Q_ch[año, mes] - 
+                    self.Q_A_apoyo[año, mes] - 
+                    self.Q_B_apoyo[año, mes],
                     f"balance_vrfi_stock_{año}_{mes}"
                 )
                 
@@ -263,7 +267,10 @@ class EmbalseNuevaPunilla:
                 
                 # (8) Entrada VRFI limitada por capacidad
                 m.addConstr(
-                    self.IN_VRFI[año, mes] <= self.C_VRFI - V_VRFI_prev + self.Q_ch[año, mes],
+                    self.IN_VRFI[año, mes] <= self.C_VRFI - V_VRFI_prev + 
+                    self.Q_ch[año, mes] + 
+                    self.Q_A_apoyo[año, mes] + 
+                    self.Q_B_apoyo[año, mes],
                     f"entrada_vrfi_capacidad_{año}_{mes}"
                 )
                 
@@ -343,7 +350,127 @@ class EmbalseNuevaPunilla:
                                 for año in self.anos for mes in self.months)
         self.model.setObjective(total_deficit, GRB.MINIMIZE)
 
-   
+    def export_to_excel(self, filename="resultados_embalse.xlsx"):
+        """Exportar todos los resultados a Excel"""
+        
+        # Crear DataFrames para cada tipo de variable
+        data = []
+        
+        for año in self.anos:
+            año_num = int(año.split('/')[0])
+            for mes in self.months:
+                seg = self.segundos_por_mes[mes]
+                
+                # Obtener valores de las variables
+                fila = {
+                    'Año': año,
+                    'Mes': mes,
+                    
+                    # Volúmenes almacenados
+                    'V_VRFI': self.V_VRFI[año, mes].X,
+                    'V_A': self.V_A[año, mes].X,
+                    'V_B': self.V_B[año, mes].X,
+                    
+                    # Caudales
+                    'Q_dis': self.Q_dis[año, mes].X,
+                    'Q_alm': self.Q_alm[año, mes].X,
+                    'Q_ch': self.Q_ch[año, mes].X,
+                    'Q_A': self.Q_A[año, mes].X,
+                    'Q_B': self.Q_B[año, mes].X,
+                    'Q_turb': self.Q_turb[año, mes].X,
+                    
+                    # Entradas
+                    'IN_VRFI': self.IN_VRFI[año, mes].X,
+                    'IN_A': self.IN_A[año, mes].X,
+                    'IN_B': self.IN_B[año, mes].X,
+                    
+                    # Rebalses
+                    'E_VRFI': self.E_VRFI[año, mes].X,
+                    'E_A': self.E_A[año, mes].X,
+                    'E_B': self.E_B[año, mes].X,
+                    'E_TOT': self.E_TOT[año, mes].X,
+                    
+                    # Déficits
+                    'd_A': self.d_A[año, mes].X,
+                    'd_B': self.d_B[año, mes].X,
+                }
+                
+                # Agregar parámetros externos
+                i = self.months.index(mes)
+                QPD_eff_m3s = self.QPD_eff[año, mes]  # ← DEFINIR PRIMERO
+                fila['QPD_eff_Hm3'] = QPD_eff_m3s * seg / 1_000_000
+
+                fila['Demanda_A'] = self.demandas_A[i] / 1_000_000
+                fila['Demanda_B'] = self.demandas_B[i] / 1_000_000
+                
+                # Caudales de entrada
+                Qin_m3s = self.inflow.get((año_num, mes), 0)
+                fila['Q_afl_m3s'] = Qin_m3s
+                fila['Q_afl_Hm3'] = Qin_m3s * seg / 1_000_000
+                
+                # QPD efectivo
+                QPD_eff_m3s = self.QPD_eff[año, mes]
+                QPD_eff_m3s = self.QPD_eff[año, mes]  # Definir la variable local
+                fila['QPD_eff_Hm3'] = QPD_eff_m3s * seg / 1_000_000
+                # Indicadores de desempeño
+                fila['Deficit_Total'] = fila['d_A'] + fila['d_B']
+                fila['Satisfaccion_A'] = (fila['Q_A'] / fila['Demanda_A']) * 100 if fila['Demanda_A'] > 0 else 100
+                fila['Satisfaccion_B'] = (fila['Q_B'] / fila['Demanda_B']) * 100 if fila['Demanda_B'] > 0 else 100
+                fila['Satisfaccion_Total'] = ((fila['Q_A'] + fila['Q_B']) / (fila['Demanda_A'] + fila['Demanda_B'])) * 100 if (fila['Demanda_A'] + fila['Demanda_B']) > 0 else 100
+                
+                data.append(fila)
+        
+        # Crear DataFrame principal
+        df_main = pd.DataFrame(data)
+        
+        # Crear resumen anual
+        resumen_anual = []
+        for año in self.anos:
+            df_año = df_main[df_main['Año'] == año]
+            resumen = {
+                'Año': año,
+                'Deficit_Total_Anual': df_año['Deficit_Total'].sum(),
+                'Deficit_A_Anual': df_año['d_A'].sum(),
+                'Deficit_B_Anual': df_año['d_B'].sum(),
+                'Volumen_Turbinado_Anual': df_año['Q_turb'].sum(),
+                'Demanda_Total_Anual': df_año['Demanda_A'].sum() + df_año['Demanda_B'].sum(),
+                'Satisfaccion_Promedio': df_año['Satisfaccion_Total'].mean(),
+                'Mes_Mayor_Deficit': df_año.loc[df_año['Deficit_Total'].idxmax(), 'Mes'] if df_año['Deficit_Total'].max() > 0 else 'Ninguno'
+            }
+            resumen_anual.append(resumen)
+        
+        df_resumen = pd.DataFrame(resumen_anual)
+        
+        # Crear Excel con múltiples hojas
+        with pd.ExcelWriter(filename, engine='openpyxl') as writer:
+            df_main.to_excel(writer, sheet_name='Resultados_Detallados', index=False)
+            df_resumen.to_excel(writer, sheet_name='Resumen_Anual', index=False)
+            
+            # Agregar hoja de estadísticas
+            stats = {
+                'Métrica': [
+                    'Déficit Total (Hm³)',
+                    'Déficit A (Hm³)',
+                    'Déficit B (Hm³)',
+                    'Satisfacción Promedio (%)',
+                    'Volumen Turbinado Total (Hm³)'
+                ],
+                'Valor': [
+                    df_main['Deficit_Total'].sum(),
+                    df_main['d_A'].sum(),
+                    df_main['d_B'].sum(),
+                    df_main['Satisfaccion_Total'].mean(),
+                    df_main['Q_turb'].sum()
+                ]
+            }
+            df_stats = pd.DataFrame(stats)
+            df_stats.to_excel(writer, sheet_name='Estadisticas_Globales', index=False)
+        
+        print(f"✅ Resultados exportados a {filename}")
+        print(f"📊 Déficit total: {df_main['Deficit_Total'].sum():.2f} Hm³")
+        print(f"📈 Satisfacción promedio: {df_main['Satisfaccion_Total'].mean():.1f}%")
+        
+        return df_main, df_resumen
     def solve(self):
         """Resolver el modelo"""            
         try:
@@ -370,13 +497,18 @@ class EmbalseNuevaPunilla:
             return None
 
     def get_solution(self):
-            """Extraer la solución del modelo"""
-            solution = {
-                'status': self.model.status,
-                'obj_val': self.model.objVal,
-                # Agrega más resultados según necesites
-            }
-            return solution
+        """Extraer la solución del modelo"""
+        solution = {
+            'status': self.model.status,
+            'obj_val': self.model.objVal,
+        }
+        
+        # Exportar resultados a Excel
+        df_detalle, df_resumen = self.export_to_excel()
+        solution['df_detalle'] = df_detalle
+        solution['df_resumen'] = df_resumen
+        
+        return solution
 
 
 # main.py llamarlo #esto se llama main_modelito2.py
