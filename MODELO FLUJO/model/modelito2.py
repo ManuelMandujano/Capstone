@@ -74,7 +74,7 @@ class EmbalseNuevaPunilla:
         self.ssr_carry_between_years = True  # arrastra backlog de abril a mayo
 
         # Piso de reserva VRFI (Hm³) protegido contra A/B
-        self.RSV_FLOOR = 1.625
+        self.RSV_FLOOR = 2.275
 
         # Stocks iniciales (si no hay año previo)
         self.VRFI_init = 0.0
