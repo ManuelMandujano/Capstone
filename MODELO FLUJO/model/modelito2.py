@@ -4,139 +4,17 @@ from gurobipy import GRB
 import pandas as pd
 
 class EmbalseNuevaPunilla:
-    
     """
     MODELO DE OPERACIÓN SIMPLIFICADO — Embalse Nueva Punilla
 
-    Unidades
-    --------
-    - Caudales base (Q_nuble, Q_hoya*) en m³/s → se convierten a Hm³/mes con `segundos_por_mes`.
-    - Volúmenes (stocks V_*, llenados IN_*, rebalse E_TOT, entregas Q_*) en Hm³.
-    - Demandas mensuales (DemA, DemB) en Hm³.
-
-    Calendario
-    ----------
-    - Mes del modelo: m = 1..12 corresponde a MAY..ABR (año hidrológico).
-    - Para leer demandas por mes civil (ene=1,...,dic=12) se usa un mapeo  (MAY..ABR → 5..4).
-
-    === GLOSARIO DE VARIABLES (listo para LaTeX) ===
-    Para cada año t y mes m:
-
-    Stocks (Hm³)
-    ------------
-    - V_VRFI_{t,m}  : stock en VRFI al final de m, 0 ≤ V_VRFI ≤ C_VRFI.
-    - V^A_{t,m}     : stock de A al final de m,     0 ≤ V^A ≤ C_A.
-    - V^B_{t,m}     : stock de B al final de m,     0 ≤ V^B ≤ C_B.
-
-    Llenados y rebalse (Hm³/mes)
-    ----------------------------
-    - IN_R_{t,m} (= IN_VRFI): llenado efectivo del VRFI en m.
-    - IN_A_{t,m}, IN_B_{t,m}: llenados efectivos de A y B en m.
-    - E_TOT_{t,m}           : rebalse total ex–post de remanente en m.
-
-    Entregas (Hm³/mes)
-    ------------------
-    - Q_ch_{t,m}         : SSR (sale de VRFI); **no** turbina.
-    - Q_A_{t,m}, Q_B_{t,m}: servicio propio de A y B (sale de sus stocks).
-    - Q_A_ap_{t,m}, Q_B_ap_{t,m}: apoyo VRFI a A y B (safety-net hasta 50% de demanda).
-
-    Déficits y turbinado
-    --------------------
-    - d_A_{t,m}, d_B_{t,m} : déficits del mes.
-    - Q_turb_{t,m}         : volumen turbinado = (Q_A+Q_A_ap) + (Q_B+Q_B_ap) + E_TOT.
-
-    Auxiliares de prioridad de llenado (Hm³)
-    ----------------------------------------
-    - Rem_{t,m}   : remanente del mes tras QPD (en Hm³/mes).
-    - HeadR_{t,m} : espacio libre en VRFI al inicio del mes.
-    - HeadA_{t,m}, HeadB_{t,m} : espacios libres en A y B.
-    - FillR_{t,m} (= IN_R_{t,m}) = min(Rem, HeadR).
-    - zR_{t,m} = Rem - IN_R.
-    - ShareA_{t,m} = 0.71·zR,  ShareB_{t,m} = 0.29·zR.
-    - IN_A = min(ShareA, HeadA),  IN_B = min(ShareB, HeadB).
-
-    Auxiliares apoyo 50% y saturación VRFI
-    --------------------------------------
-    - needA_{t,m} ≥ max(0, 0.5·DemA_{t,m} − Q_A_{t,m}),  needB_{t,m} ≥ max(0, 0.5·DemB_{t,m} − Q_B_{t,m}).
-    - VRFI_avail_{t,m} = V^R_{t,m-1} + IN_R_{t,m} − Q_ch_{t,m}.
-    - needTot_{t,m} = needA_{t,m} + needB_{t,m}.
-    - SupportTot_{t,m} = min(VRFI_avail_{t,m}, needTot_{t,m}).
-    - Igualdad de saturación: Q_A_ap_{t,m} + Q_B_ap_{t,m} = SupportTot_{t,m}.
-
-    *** Regla “Propio da TODO lo posible” (nueva, dura) ***
-    ------------------------------------------------------
-    - Q_A_{t,m} = min(DemA_{t,m}, V^A_{t,m-1} + IN_A_{t,m})
-    - Q_B_{t,m} = min(DemB_{t,m}, V^B_{t,m-1} + IN_B_{t,m})
-
-    Objetivo
-    --------
-    Minimizar déficit total con desempates suaves:
-      min Σ(d_A + d_B) + 1e-3·Σ(Q_A_ap + Q_B_ap) − 1e-3·Σ(Q_A + Q_B) + 1e-6·Σ(V_A + V_B + V_VRFI)
-
-    === BLOQUE DE RESTRICCIONES — Texto formal (listo para LaTeX) ===
-
-    Para cada año t y mes m (Qin, QPD, DemA, DemB en Hm³/mes):
-
-    1) Remanente y prioridades de llenado con el remanente del mes:
-       Rem_{t,m} = Qin_{t,m} − QPD_{t,m}
-       HeadR_{t,m} = C_VRFI − V^R_{t,m-1}
-       IN_R_{t,m} = min(Rem_{t,m}, HeadR_{t,m})
-       zR_{t,m} = Rem_{t,m} − IN_R_{t,m}
-       HeadA_{t,m} = C_A − V^A_{t,m-1},   HeadB_{t,m} = C_B − V^B_{t,m-1}
-       ShareA_{t,m} = 0.71·zR_{t,m},      ShareB_{t,m} = 0.29·zR_{t,m}
-       IN_A_{t,m} = min(ShareA_{t,m}, HeadA_{t,m})
-       IN_B_{t,m} = min(ShareB_{t,m}, HeadB_{t,m})
-
-    2) Rebalse ex–post de remanente:
-       E_TOT_{t,m} = Rem_{t,m} − IN_R_{t,m} − IN_A_{t,m} − IN_B_{t,m}
-
-    3) Balances de stock (fin de mes):
-       V^R_{t,m} = V^R_{t,m-1} + IN_R_{t,m} − Q_ch_{t,m} − Q_A_ap_{t,m} − Q_B_ap_{t,m}
-       V^A_{t,m} = V^A_{t,m-1} + IN_A_{t,m} − Q_A_{t,m}
-       V^B_{t,m} = V^B_{t,m-1} + IN_B_{t,m} − Q_B_{t,m}
-       0 ≤ V^R_{t,m} ≤ C_VRFI, 0 ≤ V^A_{t,m} ≤ C_A, 0 ≤ V^B_{t,m} ≤ C_B
-
-    4) Disponibilidades (cotas superiores):
-       Q_A_{t,m} ≤ V^A_{t,m-1} + IN_A_{t,m}
-       Q_B_{t,m} ≤ V^B_{t,m-1} + IN_B_{t,m}
-       Q_ch_{t,m} ≤ V^R_{t,m-1} + IN_R_{t,m}
-
-    4-bis) Propio “da TODO lo posible” (igualdad de mínimo):
-       Q_A_{t,m} = min(DemA_{t,m}, V^A_{t,m-1} + IN_A_{t,m})
-       Q_B_{t,m} = min(DemB_{t,m}, V^B_{t,m-1} + IN_B_{t,m})
-
-    5) Apoyo VRFI solo para completar 50%:
-       needA_{t,m} ≥ 0.5·DemA_{t,m} − Q_A_{t,m},   needA_{t,m} ≥ 0
-       needB_{t,m} ≥ 0.5·DemB_{t,m} − Q_B_{t,m},   needB_{t,m} ≥ 0
-       Q_A_ap_{t,m} ≤ needA_{t,m},  Q_B_ap_{t,m} ≤ needB_{t,m}
-
-    5-bis) Usar TODO el VRFI disponible (saturación):
-       VRFI_avail_{t,m} = V^R_{t,m-1} + IN_R_{t,m} − Q_ch_{t,m}
-       needTot_{t,m} = needA_{t,m} + needB_{t,m}
-       SupportTot_{t,m} = min(VRFI_avail_{t,m}, needTot_{t,m})
-       Q_A_ap_{t,m} + Q_B_ap_{t,m} = SupportTot_{t,m}
-
-    6) No sobre-servicio y déficit:
-       Q_A_{t,m} + Q_A_ap_{t,m} ≤ DemA_{t,m}
-       Q_B_{t,m} + Q_B_ap_{t,m} ≤ DemB_{t,m}
-       d_A_{t,m} = DemA_{t,m} − (Q_A_{t,m} + Q_A_ap_{t,m}) ≥ 0
-       d_B_{t,m} = DemB_{t,m} − (Q_B_{t,m} + Q_B_ap_{t,m}) ≥ 0
-
-    7) Turbinado:
-       Q_turb_{t,m} = (Q_A_{t,m} + Q_A_ap_{t,m}) + (Q_B_{t,m} + Q_B_ap_{t,m}) + E_TOT_{t,m}
-
-    8) SSR (anual exacto o mensual fijo):
-       Σ_m Q_ch_{t,m} = V_C_H    (ó bien Q_ch_{t,m} = V_C_H · frac_m si se fija mensual)
-    """
-    """
-    MODELO DE OPERACIÓN SIMPLIFICADO — Embalse Nueva Punilla
-
-    Reglas clave:
-    - El remanente mensual (Qin - SSR) se usa para llenar: primero VRFI, luego A y B (71/29). Lo que sobre, rebalsa.
-    - El servicio propio de A y B sale de sus stocks (previos + llenados de ese mes).
-    - El VRFI solo apoya para completar HASTA el 50% de la demanda de cada grupo y SOLO si el propio queda < 50%.
-      Si el propio alcanza ≥50%, el apoyo VRFI es 0.
-    - El apoyo y el SSR salen del stock del VRFI (no del remanente directo).
+    Claves:
+    - SSR mensual = 3.9/12 Hm³ con backlog y prioridad: Q_ch = min(SSR_due, V_R_prev + IN_VRFI).
+    - Piso VRFI reservado (NO para A/B) = 1.5 Hm³: VRFI_avail_free = max(V_R_prev + IN - Q_ch - 1.5, 0).
+    - Reparto de apoyo VRFI 71/29 con reasignación de excedentes.
+    - FIX 1: cota dura Q_A_apoyo + Q_B_apoyo ≤ VRFI_avail_free (evita V_VRFI < 0).
+    - FIX 2: sin igualdades de “stock MAY = 0”; uso parámetros de stock inicial si no hay año previo.
+    - FIX 3: min() de SSR usa variable auxiliar (evita “Invalid data in vars array”).
+    - FIX 4: escribir solo IIS en .ilp (Gurobi 12).
     """
 
     def __init__(self):
@@ -193,8 +71,15 @@ class EmbalseNuevaPunilla:
 
         # ============ SSR (Hm³/año) ============
         self.V_C_H = 3.9
-        self.fix_ssr_monthly = False
-        self.ssr_frac = {1:0.10,2:0.10,3:0.15,4:0.20,5:0.15,6:0.10,7:0.10,8:0.05,9:0.0,10:0.0,11:0.0,12:0.05}
+        self.ssr_carry_between_years = True  # arrastra backlog de abril a mayo
+
+        # Piso de reserva VRFI (Hm³) protegido contra A/B
+        self.RSV_FLOOR = 1.625
+
+        # Stocks iniciales (si no hay año previo)
+        self.VRFI_init = 0.0
+        self.VA_init   = 0.0
+        self.VB_init   = 0.0
 
         # Energía no usada
         self.MWh_per_Hm3 = 0.0
@@ -214,11 +99,11 @@ class EmbalseNuevaPunilla:
         self.E_TOT   = m.addVars(self.anos, self.months, name="E_TOT", lb=0)
 
         # Entregas (Hm³/mes)
-        self.Q_ch = m.addVars(self.anos, self.months, name="Q_ch", lb=0)   # SSR
-        self.Q_A  = m.addVars(self.anos, self.months, name="Q_A",  lb=0)   # Servicio propio A
-        self.Q_B  = m.addVars(self.anos, self.months, name="Q_B",  lb=0)   # Servicio propio B
+        self.Q_ch = m.addVars(self.anos, self.months, name="Q_ch", lb=0)   # SSR (consumo humano)
+        self.Q_A  = m.addVars(self.anos, self.months, name="Q_A",  lb=0)   # Propio A
+        self.Q_B  = m.addVars(self.anos, self.months, name="Q_B",  lb=0)   # Propio B
 
-        # Apoyo VRFI (solo para completar 50%)
+        # Apoyo VRFI (hasta 50%)
         self.Q_A_apoyo = m.addVars(self.anos, self.months, name="Q_A_apoyo", lb=0)
         self.Q_B_apoyo = m.addVars(self.anos, self.months, name="Q_B_apoyo", lb=0)
 
@@ -233,8 +118,8 @@ class EmbalseNuevaPunilla:
         self.Q_dis = m.addVars(self.anos, self.months, name="Q_dis", lb=-GRB.INFINITY)
 
         # Auxiliares de llenado
-        self.Rem    = m.addVars(self.anos, self.months, name="Rem",   lb=0)  # Qin-UPREF (recortado a ≥0)
-        self.HeadR  = m.addVars(self.anos, self.months, name="HeadR", lb=0)  # espacio VRFI
+        self.Rem    = m.addVars(self.anos, self.months, name="Rem",   lb=0)
+        self.HeadR  = m.addVars(self.anos, self.months, name="HeadR", lb=0)
         self.FillR  = m.addVars(self.anos, self.months, name="FillR", lb=0)
         self.zR     = m.addVars(self.anos, self.months, name="zR",    lb=0)
         self.HeadA  = m.addVars(self.anos, self.months, name="HeadA", lb=0)
@@ -248,16 +133,15 @@ class EmbalseNuevaPunilla:
         self.needA  = m.addVars(self.anos, self.months, name="needA", lb=0)
         self.needB  = m.addVars(self.anos, self.months, name="needB", lb=0)
 
-        # ===== Auxiliares de apoyo con prioridad dura =====
-        self.VRFI_avail  = m.addVars(self.anos, self.months, name="VRFI_avail")   # = V_R_prev + IN_VRFI - Q_ch
-        self.needTot     = m.addVars(self.anos, self.months, name="needTot", lb=0)  # solo para reporte
-        self.SupportTot  = m.addVars(self.anos, self.months, name="SupportTot", lb=0)  # = min(VRFI_avail, needTot) (reporte)
-        self.R_after_A   = m.addVars(self.anos, self.months, name="R_after_A")  # residual tras apoyar A
+        # Totales de apoyo y disponibilidad post-SSR (libre para A/B)
+        self.VRFI_avail_free = m.addVars(self.anos, self.months, name="VRFI_avail_free", lb=0)
+        self.needTot     = m.addVars(self.anos, self.months, name="needTot", lb=0)
+        self.SupportTot  = m.addVars(self.anos, self.months, name="SupportTot", lb=0)
 
-        # ===== Auxiliar para recortar Rem a ≥ 0 =====
+        # Recorte Rem a ≥ 0
         self.RemRaw = m.addVars(self.anos, self.months, name="RemRaw", lb=-GRB.INFINITY)
 
-        # Constante cero (para GENCONSTR MAX)
+        # Constante cero (para MAX)
         self.zeroVar = m.addVar(lb=0.0, ub=0.0, name="zeroConst")
 
         # (opcional debug)
@@ -271,6 +155,24 @@ class EmbalseNuevaPunilla:
         self.tB = m.addVars(self.anos, self.months, name="tB")
         self.rA = m.addVars(self.anos, self.months, name="rA", lb=0.0)
         self.rB = m.addVars(self.anos, self.months, name="rB", lb=0.0)
+
+        # Reparto proporcional 71/29 del apoyo VRFI
+        self.pA = m.addVars(self.anos, self.months, name="pA")
+        self.pB = m.addVars(self.anos, self.months, name="pB")
+        self.allocA_base = m.addVars(self.anos, self.months, name="allocA_base", lb=0.0)
+        self.allocB_base = m.addVars(self.anos, self.months, name="allocB_base", lb=0.0)
+        self.surplusA = m.addVars(self.anos, self.months, name="surplusA", lb=0.0)
+        self.surplusB = m.addVars(self.anos, self.months, name="surplusB", lb=0.0)
+        self.gapA     = m.addVars(self.anos, self.months, name="gapA",     lb=0.0)
+        self.gapB     = m.addVars(self.anos, self.months, name="gapB",     lb=0.0)
+        self.extra_to_A = m.addVars(self.anos, self.months, name="extra_to_A", lb=0.0)
+        self.extra_to_B = m.addVars(self.anos, self.months, name="extra_to_B", lb=0.0)
+
+        # ===== SSR mensual con rezago y prioridad dura =====
+        self.SSR_due     = m.addVars(self.anos, self.months, name="SSR_due", lb=0.0)
+        self.SSR_backlog = m.addVars(self.anos, self.months, name="SSR_backlog", lb=0.0)
+        # Capacidad (variable auxiliar) para usar en min()
+        self.SSR_cap_var = m.addVars(self.anos, self.months, name="SSR_cap_var", lb=0.0)
 
     # ===================== Datos =====================
     def load_flow_data(self, file_path):
@@ -319,13 +221,10 @@ class EmbalseNuevaPunilla:
                 qpd_nom = max(derechos_MAY_ABR[mes-1], qeco_MAY_ABR[mes-1], max(0.0, 95.7 - H))
                 self.QPD_eff[año, mes] = min(qpd_nom, self.Q_nuble.get((y,mes),0.0))
 
-        # Iniciales (MAY del primer año)
-        primer = self.anos[0]
-        m.addConstr(self.V_VRFI[primer,1] == 0, name="init_VRFI")
-        m.addConstr(self.V_A[primer,1]    == 0, name="init_VA")
-        m.addConstr(self.V_B[primer,1]    == 0, name="init_VB")
+        # SSR mensual (3.9/12) con backlog y prioridad dura
+        ssr_month = self.V_C_H / 12.0
 
-        for año in self.anos:
+        for a_idx, año in enumerate(self.anos):
             y = int(año.split('/')[0])
             for i, mes in enumerate(self.months):
                 seg   = self.segundos_por_mes[mes]
@@ -337,12 +236,17 @@ class EmbalseNuevaPunilla:
                 demA  = (self.DA_a_m[key] * self.num_A * self.FEA) / 1_000_000.0
                 demB  = (self.DB_a_b[key] * self.num_B * self.FEB) / 1_000_000.0
 
-                # Stocks previos
+                # Stocks previos (si no hay año previo, uso parámetros *_init)
                 if i == 0:
-                    prev_año = f"{y-1}/{y}"
-                    V_R_prev = self.V_VRFI[prev_año,12] if prev_año in self.anos else 0
-                    V_A_prev = self.V_A[prev_año,12]    if prev_año in self.anos else 0
-                    V_B_prev = self.V_B[prev_año,12]    if prev_año in self.anos else 0
+                    if a_idx > 0:
+                        prev_año = self.anos[a_idx-1]
+                        V_R_prev = self.V_VRFI[prev_año,12]
+                        V_A_prev = self.V_A[prev_año,12]
+                        V_B_prev = self.V_B[prev_año,12]
+                    else:
+                        V_R_prev = self.model.addVar(lb=self.VRFI_init, ub=self.VRFI_init, name="VRFI_prev_init")
+                        V_A_prev = self.model.addVar(lb=self.VA_init,   ub=self.VA_init,   name="VA_prev_init")
+                        V_B_prev = self.model.addVar(lb=self.VB_init,   ub=self.VB_init,   name="VB_prev_init")
                 else:
                     V_R_prev = self.V_VRFI[año, mes-1]
                     V_A_prev = self.V_A[año,  mes-1]
@@ -380,7 +284,113 @@ class EmbalseNuevaPunilla:
                 # Para reporte
                 m.addConstr(self.Q_dis[año,mes] == Qin - UPREF, name=f"qdis_{año}_{mes}")
 
-                # (3) Balances de stock
+                # ===== SSR mensual con prioridad dura (consumo humano) =====
+                # backlog previo
+                if i == 0:
+                    if self.ssr_carry_between_years and a_idx > 0:
+                        prev_a = self.anos[a_idx-1]
+                        backlog_prev = self.SSR_backlog[prev_a, 12]
+                    else:
+                        backlog_prev = self.model.addVar(lb=0.0, ub=0.0, name=f"SSR_backlog_prev0_{año}")
+                else:
+                    backlog_prev = self.SSR_backlog[año, mes-1]
+
+                # Deuda SSR del mes
+                m.addConstr(self.SSR_due[año, mes] == ssr_month + backlog_prev,
+                            name=f"SSR_due_{año}_{mes}")
+
+                # Capacidad para SSR (= V_R_prev + IN_VRFI) como VARIABLE AUXILIAR
+                m.addConstr(self.SSR_cap_var[año, mes] == V_R_prev + self.IN_VRFI[año,mes],
+                            name=f"SSR_cap_var_def_{año}_{mes}")
+
+                # PRIORIDAD: paga todo lo posible
+                m.addGenConstrMin(
+                    self.Q_ch[año, mes],
+                    [ self.SSR_due[año, mes], self.SSR_cap_var[año, mes] ],
+                    name=f"SSR_qch_equals_min_{año}_{mes}"
+                )
+
+                # backlog del mes
+                m.addConstr(self.SSR_backlog[año, mes] == self.SSR_due[año, mes] - self.Q_ch[año, mes],
+                            name=f"SSR_backlog_def_{año}_{mes}")
+
+                # ===== Disponibilidad para apoyos A/B protegiendo 1.5 =====
+                # VRFI_avail_free = max( V_R_prev + IN_VRFI - Q_ch - 1.5, 0 )
+                temp_free = m.addVar(lb=-GRB.INFINITY, name=f"temp_free_{año}_{mes}")
+                m.addConstr(temp_free == V_R_prev + self.IN_VRFI[año,mes] - self.Q_ch[año,mes] - self.RSV_FLOOR,
+                            name=f"temp_free_def_{año}_{mes}")
+                m.addGenConstrMax(self.VRFI_avail_free[año,mes], [temp_free, self.zeroVar],
+                                  name=f"vrfi_avail_free_max_{año}_{mes}")
+
+                # (4) Disponibilidades para propio A/B
+                m.addConstr(self.Q_A[año,mes] <= V_A_prev + self.IN_A[año,mes],     name=f"disp_A_{año}_{mes}")
+                m.addConstr(self.Q_B[año,mes] <= V_B_prev + self.IN_B[año,mes],     name=f"disp_B_{año}_{mes}")
+
+                m.addConstr(self.A_avail[año,mes] == V_A_prev + self.IN_A[año,mes], name=f"A_avail_def_{año}_{mes}")
+                m.addConstr(self.B_avail[año,mes] == V_B_prev + self.IN_B[año,mes], name=f"B_avail_def_{año}_{mes}")
+
+                m.addConstr(self.Q_A[año,mes] <= demA, name=f"A_le_Dem_{año}_{mes}")
+                m.addConstr(self.Q_B[año,mes] <= demB, name=f"B_le_Dem_{año}_{mes}")
+
+                m.addConstr(self.A_dem50[año,mes] == 0.5*demA, name=f"A_dem50_def_{año}_{mes}")
+                m.addConstr(self.B_dem50[año,mes] == 0.5*demB, name=f"B_dem50_def_{año}_{mes}")
+
+                m.addGenConstrMin(self.A_own_req[año,mes], [self.A_avail[año,mes], self.A_dem50[año,mes]],
+                                  name=f"A_own_req_min_{año}_{mes}")
+                m.addGenConstrMin(self.B_own_req[año,mes], [self.B_avail[año,mes], self.B_dem50[año,mes]],
+                                  name=f"B_own_req_min_{año}_{mes}")
+
+                m.addConstr(self.Q_A[año,mes] >= self.A_own_req[año,mes], name=f"A_use_own_first_{año}_{mes}")
+                m.addConstr(self.Q_B[año,mes] >= self.B_own_req[año,mes], name=f"B_use_own_first_{año}_{mes}")
+
+                # ========= (5) Apoyo VRFI: reparto 71/29 con reasignación =========
+                m.addConstr(self.tA[año,mes] == 0.5*demA - self.Q_A[año,mes], name=f"tA_def_{año}_{mes}")
+                m.addConstr(self.tB[año,mes] == 0.5*demB - self.Q_B[año,mes], name=f"tB_def_{año}_{mes}")
+                m.addGenConstrMax(self.needA[año,mes], [self.tA[año,mes], self.zeroVar], name=f"needA_max_{año}_{mes}")
+                m.addGenConstrMax(self.needB[año,mes], [self.tB[año,mes], self.zeroVar], name=f"needB_max_{año}_{mes}")
+
+                m.addConstr(self.needTot[año,mes] == self.needA[año,mes] + self.needB[año,mes],
+                            name=f"needTot_{año}_{mes}")
+                m.addGenConstrMin(self.SupportTot[año,mes],
+                                  [self.VRFI_avail_free[año,mes], self.needTot[año,mes]],
+                                  name=f"supportTot_min_{año}_{mes}")
+
+                m.addConstr(self.pA[año,mes] == 0.71 * self.SupportTot[año,mes], name=f"pA_prop_{año}_{mes}")
+                m.addConstr(self.pB[año,mes] == 0.29 * self.SupportTot[año,mes], name=f"pB_prop_{año}_{mes}")
+
+                m.addGenConstrMin(self.allocA_base[año,mes],
+                                  [self.needA[año,mes], self.pA[año,mes]],
+                                  name=f"allocA_base_min_{año}_{mes}")
+                m.addGenConstrMin(self.allocB_base[año,mes],
+                                  [self.needB[año,mes], self.pB[año,mes]],
+                                  name=f"allocB_base_min_{año}_{mes}")
+
+                m.addConstr(self.surplusA[año,mes] == self.pA[año,mes] - self.allocA_base[año,mes],
+                            name=f"surplusA_{año}_{mes}")
+                m.addConstr(self.surplusB[año,mes] == self.pB[año,mes] - self.allocB_base[año,mes],
+                            name=f"surplusB_{año}_{mes}")
+                m.addConstr(self.gapA[año,mes]     == self.needA[año,mes] - self.allocA_base[año,mes],
+                            name=f"gapA_{año}_{mes}")
+                m.addConstr(self.gapB[año,mes]     == self.needB[año,mes] - self.allocB_base[año,mes],
+                            name=f"gapB_{año}_{mes}")
+
+                m.addGenConstrMin(self.extra_to_B[año,mes],
+                                  [self.surplusA[año,mes], self.gapB[año,mes]],
+                                  name=f"extra_to_B_min_{año}_{mes}")
+                m.addGenConstrMin(self.extra_to_A[año,mes],
+                                  [self.surplusB[año,mes], self.gapA[año,mes]],
+                                  name=f"extra_to_A_min_{año}_{mes}")
+
+                m.addConstr(self.Q_A_apoyo[año,mes] == self.allocA_base[año,mes] + self.extra_to_A[año,mes],
+                            name=f"Q_A_apoyo_final_{año}_{mes}")
+                m.addConstr(self.Q_B_apoyo[año,mes] == self.allocB_base[año,mes] + self.extra_to_B[año,mes],
+                            name=f"Q_B_apoyo_final_{año}_{mes}")
+
+                # *** FIX duro: no gastar más VRFI libre de lo que hay ***
+                m.addConstr(self.Q_A_apoyo[año,mes] + self.Q_B_apoyo[año,mes] <= self.VRFI_avail_free[año,mes],
+                            name=f"apoyo_sum_le_vrfi_free_{año}_{mes}")
+
+                # (3) Balances de stock (VRFI descuenta SSR y apoyos)
                 m.addConstr(
                     self.V_VRFI[año,mes] ==
                     V_R_prev + self.IN_VRFI[año,mes]
@@ -392,67 +402,10 @@ class EmbalseNuevaPunilla:
                 m.addConstr(self.V_B[año,mes] == V_B_prev + self.IN_B[año,mes] - self.Q_B[año,mes],
                             name=f"bal_vb_{año}_{mes}")
 
+                # Capacidad
                 m.addConstr(self.V_VRFI[año,mes] <= self.C_VRFI,   name=f"cap_vrfi_{año}_{mes}")
                 m.addConstr(self.V_A[año,mes]    <= self.C_TIPO_A, name=f"cap_va_{año}_{mes}")
                 m.addConstr(self.V_B[año,mes]    <= self.C_TIPO_B, name=f"cap_vb_{año}_{mes}")
-
-                # (4) Disponibilidades para servir (cotas)
-                m.addConstr(self.Q_A[año,mes] <= V_A_prev + self.IN_A[año,mes],     name=f"disp_A_{año}_{mes}")
-                m.addConstr(self.Q_B[año,mes] <= V_B_prev + self.IN_B[año,mes],     name=f"disp_B_{año}_{mes}")
-                m.addConstr(self.Q_ch[año,mes] <= V_R_prev + self.IN_VRFI[año,mes], name=f"disp_ch_{año}_{mes}")
-
-                # (4-bis) PROPIO: “da TODO lo posible hasta 50%” (sin igualdades duras)
-                m.addConstr(self.A_avail[año,mes] == V_A_prev + self.IN_A[año,mes], name=f"A_avail_def_{año}_{mes}")
-                m.addConstr(self.B_avail[año,mes] == V_B_prev + self.IN_B[año,mes], name=f"B_avail_def_{año}_{mes}")
-
-                # Cotas superiores obvias (ya tienes disp_A/disp_B arriba, pero repetimos explícito hacia la demanda)
-                m.addConstr(self.Q_A[año,mes] <= demA, name=f"A_le_Dem_{año}_{mes}")
-                m.addConstr(self.Q_B[año,mes] <= demB, name=f"B_le_Dem_{año}_{mes}")
-
-                # Propio debe cubrir al menos el mínimo entre (disponible, 50% de la demanda)
-                m.addConstr(self.A_dem50[año,mes] == 0.5*demA, name=f"A_dem50_def_{año}_{mes}")
-                m.addConstr(self.B_dem50[año,mes] == 0.5*demB, name=f"B_dem50_def_{año}_{mes}")
-
-                m.addGenConstrMin(self.A_own_req[año,mes], [self.A_avail[año,mes], self.A_dem50[año,mes]],
-                                name=f"A_own_req_min_{año}_{mes}")
-                m.addGenConstrMin(self.B_own_req[año,mes], [self.B_avail[año,mes], self.B_dem50[año,mes]],
-                                name=f"B_own_req_min_{año}_{mes}")
-
-                m.addConstr(self.Q_A[año,mes] >= self.A_own_req[año,mes], name=f"A_use_own_first_{año}_{mes}")
-                m.addConstr(self.Q_B[año,mes] >= self.B_own_req[año,mes], name=f"B_use_own_first_{año}_{mes}")
-
-
-                # ========= (5) Apoyo VRFI solo hasta 50% con PRIORIDAD DURA =========
-                m.addConstr(self.tA[año,mes] == 0.5*demA - self.Q_A[año,mes], name=f"tA_def_{año}_{mes}")
-                m.addConstr(self.tB[año,mes] == 0.5*demB - self.Q_B[año,mes], name=f"tB_def_{año}_{mes}")
-                m.addGenConstrMax(self.needA[año,mes], [self.tA[año,mes], self.zeroVar], name=f"needA_max_{año}_{mes}")
-                m.addGenConstrMax(self.needB[año,mes], [self.tB[año,mes], self.zeroVar], name=f"needB_max_{año}_{mes}")
-
-                # VRFI disponible para apoyo (post-SSR)
-                m.addConstr(self.VRFI_avail[año,mes] == V_R_prev + self.IN_VRFI[año,mes] - self.Q_ch[año,mes],
-                            name=f"vrfi_avail_{año}_{mes}")
-
-                # A toma primero
-                m.addGenConstrMin(self.Q_A_apoyo[año,mes],
-                                  [self.needA[año,mes], self.VRFI_avail[año,mes]],
-                                  name=f"A_apoyo_min_{año}_{mes}")
-
-                # residual tras A
-                m.addConstr(self.R_after_A[año,mes] == self.VRFI_avail[año,mes] - self.Q_A_apoyo[año,mes],
-                            name=f"R_after_A_{año}_{mes}")
-
-                # B toma con el residual
-                m.addGenConstrMin(self.Q_B_apoyo[año,mes],
-                                  [self.needB[año,mes], self.R_after_A[año,mes]],
-                                  name=f"B_apoyo_min_{año}_{mes}")
-
-                # (opcional) variables SOLO de reporte:
-                m.addConstr(self.needTot[año,mes] == self.needA[año,mes] + self.needB[año,mes],
-                            name=f"needTot_{año}_{mes}")
-                m.addGenConstrMin(self.SupportTot[año,mes],
-                                  [self.VRFI_avail[año,mes], self.needTot[año,mes]],
-                                  name=f"supportTot_min_{año}_{mes}")
-                # (ya NO imponemos Q_A_apoyo + Q_B_apoyo == SupportTot)
 
                 # (6) Déficit y no-sobre-servicio
                 m.addConstr(self.d_A[año,mes] == demA - (self.Q_A[año,mes] + self.Q_A_apoyo[año,mes]),
@@ -471,24 +424,6 @@ class EmbalseNuevaPunilla:
                              + self.Q_B[año,mes] + self.Q_B_apoyo[año,mes]
                              + self.E_TOT[año,mes]),
                             name=f"turb_{año}_{mes}")
-
-        # (8) SSR: anual o mensual fija
-        # (8) SSR: anual o mensual fija
-        if self.fix_ssr_monthly:
-            for año in self.anos:
-                for mes in self.months:
-                    self.model.addConstr(
-                        self.Q_ch[año, mes] == self.V_C_H * float(self.ssr_frac.get(mes, 0.0)),
-                        name=f"ssr_mes_{año}_{mes}"
-                    )
-        else:
-            for año in self.anos:
-                # IMPORTANTE: era "==", cámbialo a "<="
-                self.model.addConstr(
-                    gp.quicksum(self.Q_ch[año, mes] for mes in self.months) <= self.V_C_H,
-                    name=f"ssr_anual_{año}"
-                )
-
 
     # ===================== Objetivo =====================
     def set_objective(self):
@@ -513,11 +448,11 @@ class EmbalseNuevaPunilla:
                     'Año': año, 'Mes': mes,
                     'V_VRFI': self.V_VRFI[año,mes].X, 'V_A': self.V_A[año,mes].X, 'V_B': self.V_B[año,mes].X,
                     'Q_dis': self.Q_dis[año,mes].X, 'Q_ch': self.Q_ch[año,mes].X,
+                    'SSR_due': self.SSR_due[año,mes].X, 'SSR_backlog': self.SSR_backlog[año,mes].X,
                     'Q_A': self.Q_A[año,mes].X, 'Q_B': self.Q_B[año,mes].X, 'Q_turb': self.Q_turb[año,mes].X,
                     'IN_VRFI': self.IN_VRFI[año,mes].X, 'IN_A': self.IN_A[año,mes].X, 'IN_B': self.IN_B[año,mes].X,
                     'E_TOT': self.E_TOT[año,mes].X,
-                    'Q_A_apoyo': self.Q_A_apoyo[año,mes].X, 'Q_B_apoyo': self.Q_B_apoyo[año,mes].X,
-                    'VRFI_avail': self.VRFI_avail[año,mes].X, 'SupportTot': self.SupportTot[año,mes].X,
+                    'VRFI_avail_free': self.VRFI_avail_free[año,mes].X,
                     'needA': self.needA[año,mes].X, 'needB': self.needB[año,mes].X, 'needTot': self.needTot[año,mes].X,
                     'd_A': self.d_A[año,mes].X, 'd_B': self.d_B[año,mes].X,
                     'QPD_eff_Hm3': QPD_eff_Hm3,
@@ -525,12 +460,16 @@ class EmbalseNuevaPunilla:
                     'Q_afl_m3s': Qin_m3s, 'Q_afl_Hm3': Qin,
                     'Rem': self.Rem[año,mes].X, 'FillR': self.FillR[año,mes].X, 'zR': self.zR[año,mes].X,
                     'ShareA': self.ShareA[año,mes].X, 'ShareB': self.ShareB[año,mes].X,
-                    'FillA': self.FillA[año,mes].X, 'FillB': self.FillB[año,mes].X,
-                    'rA': self.rA[año,mes].X, 'rB': self.rB[año,mes].X
+                    'FillA': self.FillA[año,mes].X, 'FillB': self.FillB[año,mes].X
                 }
+                # para Excel y TXT uso estas claves
+                fila['Q_A_apoyo'] = self.Q_A_apoyo[año,mes].X
+                fila['Q_B_apoyo'] = self.Q_B_apoyo[año,mes].X
+
                 tot_dem = DemA + DemB
-                servA = fila['Q_A'] + fila['Q_A_apoyo']; servB = fila['Q_B'] + fila['Q_B_apoyo']
-                fila['Deficit_Total'] = fila['d_A'] + fila['d_B']
+                servA = fila['Q_A'] + fila['Q_A_apoyo']
+                servB = fila['Q_B'] + fila['Q_B_apoyo']
+                fila['Deficit_Total'] = self.d_A[año,mes].X + self.d_B[año,mes].X
                 fila['Satisfaccion_A'] = (servA/DemA*100) if (DemA>0) else 100
                 fila['Satisfaccion_B'] = (servB/DemB*100) if (DemB>0) else 100
                 fila['Satisfaccion_Total'] = ((servA+servB)/tot_dem*100) if tot_dem>0 else 100
@@ -571,18 +510,15 @@ class EmbalseNuevaPunilla:
         N_M = 12
         TOT_PM = N_Y * N_M
 
-        # ===== Agregados para KPIs de 30 años =====
+        # Agregados 30 años
         Qturb_total_30y = 0.0
-        spill_total_30y = 0.0        # Σ E_TOT
-        qdis_total_30y  = 0.0        # Σ Q_dis
-        serv_total_30y  = 0.0        # Σ (ServA+ServB)
-        dem_total_30y   = 0.0        # Σ (DemA+DemB)
+        spill_total_30y = 0.0
+        qdis_total_30y  = 0.0
+        serv_total_30y  = 0.0
+        dem_total_30y   = 0.0
 
-        # Promedios por mes (sobre 30 años)
         spill_prom_mes = {m: 0.0 for m in self.months}
         qdis_prom_mes  = {m: 0.0 for m in self.months}
-
-        # Satisfacción mensual (ponderada) que ya calcularemos abajo
         sat_por_mes = {}
 
         for mes in self.months:
@@ -593,14 +529,10 @@ class EmbalseNuevaPunilla:
             DemB_mes = (self.DB_a_b[key_civil] * self.num_B * self.FEB) / 1_000_000.0
 
             for año in self.anos:
-                # Turbinado y rebalse
                 Qturb_total_30y += self.Q_turb[año, mes].X
                 spill_total_30y += self.E_TOT[año, mes].X
-
-                # Caudal disponible Q_dis (puede ser negativo)
                 qdis_total_30y  += self.Q_dis[año, mes].X
 
-                # Servicio y demanda (ponderados)
                 servA = self.Q_A[año, mes].X + self.Q_A_apoyo[año, mes].X
                 servB = self.Q_B[año, mes].X + self.Q_B_apoyo[año, mes].X
                 serv_sum += (servA + servB)
@@ -609,31 +541,25 @@ class EmbalseNuevaPunilla:
                 spill_prom_mes[mes] += self.E_TOT[año, mes].X
                 qdis_prom_mes[mes]  += self.Q_dis[año, mes].X
 
-            # promedio mensual sobre 30 años
             spill_prom_mes[mes] /= N_Y
             qdis_prom_mes[mes]  /= N_Y
-
-            # satisfacción ponderada por mes (30 años)
             sat_por_mes[mes] = (100.0 * serv_sum / dem_sum) if dem_sum > 0 else 100.0
-
-            # acumular totales globales (suma de demandas y servicios de todos los meses/años)
             serv_total_30y += serv_sum
             dem_total_30y  += dem_sum
 
-        # KPIs globales (30 años)
-        spill_prom_mensual_30y = spill_total_30y / TOT_PM          # Hm³/mes (promedio)
-        qdis_prom_mensual_30y  = qdis_total_30y  / TOT_PM          # Hm³/mes (promedio)
-        qdis_prom_total_30y    = qdis_total_30y  / TOT_PM          # lo mismo que el promedio mensual
+        spill_prom_mensual_30y = spill_total_30y / TOT_PM
+        qdis_prom_mensual_30y  = qdis_total_30y  / TOT_PM
+        qdis_prom_total_30y    = qdis_total_30y  / TOT_PM
         sat_global_30y         = (100.0 * serv_total_30y / dem_total_30y) if dem_total_30y > 0 else 100.0
 
-        # Stocks finales para mostrar
+        # Stocks finales
         ultimo_anio = self.anos[-1]
         V_R_fin = self.V_VRFI[ultimo_anio, 12].X
         V_A_fin = self.V_A[ultimo_anio, 12].X
         V_B_fin = self.V_B[ultimo_anio, 12].X
         V_total_fin_30y = V_R_fin + V_A_fin + V_B_fin
 
-        # ======== RESUMEN 30 AÑOS (ARRIBA DEL TODO) ========
+        # ======== RESUMEN 30 AÑOS ========
         lines.append("="*70)
         lines.append("RESUMEN 30 AÑOS — AGREGADOS")
         lines.append("="*70)
@@ -644,20 +570,17 @@ class EmbalseNuevaPunilla:
         lines.append(f"Caudal disponible PROMEDIO (30 años): {qdis_prom_total_30y:,.2f} Hm³/mes")
         lines.append(f"Satisfacción ponderada PROMEDIO (30 años): {sat_global_30y:6.2f}%")
         lines.append("")
-
-        # ——— Desglose mensual (promedio sobre 30 años) ———
         lines.append("Promedios mensuales sobre 30 años:")
         lines.append("Mes   Rebalse prom [Hm³/mes]   Q_dis prom [Hm³/mes]   %Satisfacción (ponderada)")
         lines.append("-"*70)
         for mes in self.months:
             lines.append(f"{mes_tag[mes]:<4}  {spill_prom_mes[mes]:10.2f}                {qdis_prom_mes[mes]:10.2f}                {sat_por_mes[mes]:6.2f}%")
         lines.append("")
-
         lines.append("Agua almacenada al final de los 30 años (fin del último periodo):")
         lines.append(f"  VRFI: {V_R_fin:.1f} Hm³   A: {V_A_fin:.1f} Hm³   B: {V_B_fin:.1f} Hm³   TOTAL: {V_total_fin_30y:.1f} Hm³")
         lines.append("")
 
-        # ===================== DETALLE ANUAL (igual que antes) =====================
+        # ===================== DETALLE ANUAL =====================
         for año in self.anos:
             y = int(año.split('/')[0])
 
@@ -685,9 +608,9 @@ class EmbalseNuevaPunilla:
 
                 if i == 0:
                     prev_año = f"{y-1}/{y}"
-                    V_R_prev = self.V_VRFI[prev_año,12].X if prev_año in self.anos else 0.0
-                    V_A_prev = self.V_A[prev_año,12].X    if prev_año in self.anos else 0.0
-                    V_B_prev = self.V_B[prev_año,12].X    if prev_año in self.anos else 0.0
+                    V_R_prev = self.V_VRFI[prev_año,12].X if prev_año in self.anos else self.VRFI_init
+                    V_A_prev = self.V_A[prev_año,12].X    if prev_año in self.anos else self.VA_init
+                    V_B_prev = self.V_B[prev_año,12].X    if prev_año in self.anos else self.VB_init
                 else:
                     V_R_prev = self.V_VRFI[año, mes-1].X
                     V_A_prev = self.V_A[año,  mes-1].X
@@ -747,7 +670,7 @@ class EmbalseNuevaPunilla:
                 VA    = self.Q_A_apoyo[año, mes].X
                 VB    = self.Q_B_apoyo[año, mes].X
                 Qturb = self.Q_turb[año, mes].X
-                VRFIa = self.VRFI_avail[año, mes].X
+                VRFIa = self.VRFI_avail_free[año, mes].X
                 needT = self.needTot[año, mes].X
                 supT  = self.SupportTot[año, mes].X
 
@@ -768,10 +691,10 @@ class EmbalseNuevaPunilla:
         print(f"📝 Reporte TXT escrito en {filename}")
         return filename
 
-
     # ===================== Solve =====================
     def solve(self):
         try:
+            print("Iniciando optimización del Embalse Nueva Punilla...")
             data_file = "data/caudales.xlsx"
             self.inflow, self.Q_nuble, self.Q_hoya1, self.Q_hoya2, self.Q_hoya3 = self.load_flow_data(data_file)
             self.setup_variables()
@@ -781,9 +704,9 @@ class EmbalseNuevaPunilla:
             if self.model.status == GRB.INFEASIBLE:
                 print("⚠️ Modelo infeasible. Calculando IIS...")
                 self.model.computeIIS()
-                self.model.write("modelo.ilp")
-                self.model.write("modelo.iis")
-                print("IIS guardado en 'modelo.iis'. Ábrelo para ver las restricciones en conflicto.")
+                # Escribir IIS en formato válido para Gurobi 12:
+                self.model.write("modelo.ilp")   # IIS LP (contiene el subsistema conflictivo)
+                print("IIS guardado en 'modelo.ilp'. Ábrelo para ver restricciones en conflicto.")
                 return None
 
             if self.model.status in (GRB.OPTIMAL, GRB.SUBOPTIMAL):

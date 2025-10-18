@@ -1,0 +1,24 @@
+\ Model Embalse_Nueva_Punilla_copy
+\ LP format - for model browsing. Use MPS format to capture full model detail.
+\ Signature: 0xd36b4bab3ef3db2c
+Minimize
+  0 Rem[1989/1990,1] + 0 HeadR[1989/1990,1] + 0 zeroConst
+Subject To
+ remraw_1989/1990_1: RemRaw[1989/1990,1] = 0
+ in_vrfi_1989/1990_1: IN_VRFI[1989/1990,1] - FillR[1989/1990,1] = 0
+ temp_free_def_1989/1990_1: - IN_VRFI[1989/1990,1] + Q_ch[1989/1990,1]
+   - VRFI_prev_init + temp_free_1989/1990_1 = -1.5
+Bounds
+ IN_VRFI[1989/1990,1] free
+ Rem[1989/1990,1] free
+ HeadR[1989/1990,1] free
+ FillR[1989/1990,1] free
+ RemRaw[1989/1990,1] free
+ -infinity <= zeroConst <= 0
+ -infinity <= VRFI_prev_init <= 0
+General Constraints
+ rem_clip0_1989/1990_1: Rem[1989/1990,1] = MAX ( RemRaw[1989/1990,1] ,
+   zeroConst )
+ fillR_min_1989/1990_1: FillR[1989/1990,1] = MIN ( Rem[1989/1990,1] ,
+   HeadR[1989/1990,1] )
+End
