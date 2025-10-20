@@ -10,7 +10,7 @@ class EmbalseCasoBase:
     Características:
     - Solo volumen total del embalse (no separación A/B)
     - No hay prioridad de llenado 
-    - Demanda total unificada
+    - Demanda humana fija = self.V_C_H (Hm³/año) repartida mes a mes (V_C_H/12)
     - Lógica FIFO simplificada
     """
 
@@ -52,7 +52,8 @@ class EmbalseCasoBase:
         self.Q_hoya2 = {}
         self.Q_hoya3 = {}
 
-        # ============ DEMANDA TOTAL (m³/mes) ============
+        # ============ DEMANDA TOTAL (parámetros) ============
+        # Los parámetros mensuales por acción se mantienen tal cual (valores constantes)
         self.num_A = 21221
         self.num_B = 7100
         self.DA_a_m = {1:9503,2:6516,3:3452,4:776,5:0,6:0,7:0,8:0,9:0,10:2444,11:6516,12:9580}
@@ -62,9 +63,15 @@ class EmbalseCasoBase:
         self.m_mayo_abril_to_civil = {1:5,2:6,3:7,4:8,5:9,6:10,7:11,8:12,9:1,10:2,11:3,12:4}
 
         # ============ SSR (Hm³/año) ============
+        # Nota: según tu instrucción, usamos este valor (V_C_H) también como la
+        # demanda humana fija anual que se repartirá en 12 meses.
         self.V_C_H = 3.9
         self.fix_ssr_monthly = False
         self.ssr_frac = {1:0.10,2:0.10,3:0.15,4:0.20,5:0.15,6:0.10,7:0.10,8:0.05,9:0.0,10:0.0,11:0.0,12:0.05}
+
+        # atributo que guardará la DEMANDA HUMANA mensual fija (Hm³/mes)
+        # se llenará en setup_constraints() como self.V_C_H / 12
+        self.human_dem_monthly = None
 
     # ===================== Variables =====================
     def setup_variables(self):
@@ -146,6 +153,13 @@ class EmbalseCasoBase:
         primer = self.anos[0]
         m.addConstr(self.V_TOTAL[primer,1] == 0, name="init_TOTAL")
 
+        # -------------------------------------------------------------------
+        # AQUÍ: usamos self.V_C_H (3.9 Hm³/año) como la demanda humana fija anual
+        # y la repartimos uniformemente en 12 meses: human_dem_monthly = V_C_H / 12
+        # -------------------------------------------------------------------
+        self.human_dem_monthly = self.V_C_H / 12.0
+        # -------------------------------------------------------------------
+
         for año in self.anos:
             y = int(año.split('/')[0])
             for i, mes in enumerate(self.months):
@@ -154,11 +168,8 @@ class EmbalseCasoBase:
                 Qin = Qin_s * seg / 1_000_000.0
                 UPREF = self.QPD_eff[año, mes] * seg / 1_000_000.0
 
-                # Demanda total unificada
-                key = self.m_mayo_abril_to_civil[mes]
-                demA = (self.DA_a_m[key] * self.num_A) / 1_000_000.0
-                demB = (self.DB_a_b[key] * self.num_B) / 1_000_000.0
-                demTOTAL = demA + demB
+                # Demanda TOTAL ahora: la DEMANDA HUMANA FIJA (V_C_H) repartida mes a mes
+                demTOTAL = self.human_dem_monthly
 
                 # Stock previo
                 if i == 0:
@@ -224,6 +235,9 @@ class EmbalseCasoBase:
     # ===================== Exportar resultados a Excel =====================
     def export_to_excel(self, filename="resultados_caso_base.xlsx"):
         data = []
+        # usar self.human_dem_monthly (demanda fija mensual) en los reportes para coherencia
+        dem_month = self.human_dem_monthly if self.human_dem_monthly is not None else 0.0
+
         for año in self.anos:
             y = int(año.split('/')[0])
             for mes in self.months:
@@ -232,10 +246,8 @@ class EmbalseCasoBase:
                 Qin = Qin_m3s * seg / 1_000_000.0
                 QPD_eff_Hm3 = self.QPD_eff[año,mes] * seg / 1_000_000.0
 
-                key = self.m_mayo_abril_to_civil[mes]
-                demA = (self.DA_a_m[key] * self.num_A) / 1_000_000.0
-                demB = (self.DB_a_b[key] * self.num_B) / 1_000_000.0
-                demTOTAL = demA + demB
+                # demTOTAL en reportes = demanda humana mensual fija
+                demTOTAL = dem_month
 
                 fila = {
                     'Año': año, 'Mes': mes,
@@ -293,6 +305,9 @@ class EmbalseCasoBase:
         mes_tag = {1:'may',2:'jun',3:'jul',4:'ago',5:'sep',6:'oct',7:'nov',8:'dic',9:'ene',10:'feb',11:'mar',12:'abr'}
         lines = []
         
+        # usar self.human_dem_monthly en el reporte
+        dem_month = self.human_dem_monthly if self.human_dem_monthly is not None else 0.0
+
         for año in self.anos:
             y = int(año.split('/')[0])
 
@@ -338,10 +353,7 @@ class EmbalseCasoBase:
             lines.append("-"*70)
 
             for i, mes in enumerate(self.months):
-                key = self.m_mayo_abril_to_civil[mes]
-                demA = (self.DA_a_m[key] * self.num_A) / 1_000_000.0
-                demB = (self.DB_a_b[key] * self.num_B) / 1_000_000.0
-                demTOTAL = demA + demB
+                demTOTAL = dem_month
 
                 servicio = self.Q_DEM[año, mes].X
                 deficit = self.d_TOTAL[año, mes].X
